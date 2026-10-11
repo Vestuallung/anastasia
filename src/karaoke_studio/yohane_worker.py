@@ -27,7 +27,7 @@ def checksum_tree(root: Path) -> dict[str, str]:
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
-        checksums[str(path.relative_to(root))] = digest.hexdigest()
+        checksums[path.relative_to(root).as_posix()] = digest.hexdigest()
     return checksums
 
 

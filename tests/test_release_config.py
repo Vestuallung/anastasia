@@ -12,11 +12,18 @@ ROOT = Path(__file__).resolve().parents[1]
 def run_python(args: list[str], config: Path | None = None) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
+    env["PYTHONUTF8"] = "1"
     env["KARAOKE_HOME"] = str(ROOT)
     if config:
         env["KARAOKE_CONFIG"] = str(config)
     return subprocess.run(
-        [sys.executable, *args], cwd=ROOT, env=env, text=True, capture_output=True, check=True
+        [sys.executable, *args],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=True,
     )
 
 
@@ -169,8 +176,11 @@ def test_production_lock_is_released_between_processes(tmp_path: Path) -> None:
     )
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
+    env["PYTHONUTF8"] = "1"
     with _production_lock(lock):
-        busy = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+        busy = subprocess.run(
+            [sys.executable, "-c", code], env=env, capture_output=True, text=True, encoding="utf-8"
+        )
         assert busy.returncode != 0
         assert "该项目已有制作任务运行" in busy.stderr
     released = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True)

@@ -81,7 +81,7 @@ def prepare_audio(
         raise RuntimeError("prepared audio is empty")
     return AudioRecord(
         original_sha256=sha256_file(source),
-        prepared_path=str(destination.relative_to(project_dir)),
+        prepared_path=destination.relative_to(project_dir).as_posix(),
         prepared_sha256=sha256_file(destination),
         duration_ms=round(duration * 1000),
     )

@@ -81,7 +81,7 @@ def relative_to_project(project_dir: Path, source: Path) -> str:
     resolved_root = project_dir.resolve()
     resolved_source = source.resolve()
     try:
-        return str(resolved_source.relative_to(resolved_root))
+        return resolved_source.relative_to(resolved_root).as_posix()
     except ValueError as exc:
         raise ValueError("project files must be copied inside the project directory") from exc
 

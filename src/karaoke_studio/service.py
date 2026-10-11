@@ -76,7 +76,7 @@ def import_project_assets(
     source_format, imported = import_lyrics(lyrics_copy)
     lines = build_lines(imported, legacy_parentheses=legacy_parentheses)
     project.lines = lines
-    project.source.lyrics_path = str(lyrics_copy.relative_to(project_dir))
+    project.source.lyrics_path = lyrics_copy.relative_to(project_dir).as_posix()
     project.source.lyrics_format = source_format
     project.source.legacy_parentheses_ruby = legacy_parentheses
     project.source.preserve_ass_timing = preserve_ass_timing
@@ -87,10 +87,10 @@ def import_project_assets(
     project.timing_patches = []
     if audio_path:
         audio_copy = _copy_source(audio_path, project_dir, "audio")
-        project.source.audio_path = str(audio_copy.relative_to(project_dir))
+        project.source.audio_path = audio_copy.relative_to(project_dir).as_posix()
     if video_path:
         video_copy = _copy_source(video_path, project_dir, "video")
-        project.source.video_path = str(video_copy.relative_to(project_dir))
+        project.source.video_path = video_copy.relative_to(project_dir).as_posix()
     if source_format == "ass" and preserve_ass_timing:
         _adopt_ass_timing(project, imported)
     project.issues = inspect_project(project)
@@ -334,7 +334,9 @@ def produce_project(
                         if not cloned:
                             shutil.copy2(source, destination)
                     retained[kind] = {"source": identity, "copy": file_identity(destination)}
-                    setattr(project.source, kind + "_path", str(destination.relative_to(root)))
+                    setattr(
+                        project.source, kind + "_path", destination.relative_to(root).as_posix()
+                    )
 
             stage("输入归档", retain_inputs)
             project.title = title

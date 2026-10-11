@@ -6,6 +6,8 @@ param(
     [string]$Config
 )
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $taskRoot = Split-Path -Parent $PSScriptRoot
 $setupArgs = @("run", "--no-project", "--python", "3.12", (Join-Path $PSScriptRoot "setup.py"))
 if ($WithModel) { $setupArgs += "--with-model" }
