@@ -31,6 +31,8 @@ Karaoke Studio 是一套本地日文卡拉 OK 制作工作台。输入视频、�
 
 ## 安装
 
+入口覆盖 Windows、macOS 和 Linux。GitHub CI 在三个系统上运行后端测试、前端测试及安装包构建。
+
 准备 Python 3.12、[uv](https://docs.astral.sh/uv/getting-started/installation/)、Git，以及带 `ass` 滤镜的 [FFmpeg/ffprobe](https://ffmpeg.org/download.html)。前端开发和重新构建使用 Node.js 22。
 
 在仓库根目录运行：
@@ -59,6 +61,33 @@ python scripts/download_model.py
 | `--dry-run` | 输出安装步骤供查看 |
 
 仓库提供已构建的浏览器界面及 Noto 字体，安装后即可使用。
+
+### Windows PowerShell
+
+准备 uv、Git 和带 ASS 滤镜的 Windows FFmpeg，运行以下入口。uv 会按项目要求准备 Python 3.12，并在项目目录创建独立环境：
+
+```powershell
+.\scripts\setup-windows.ps1 -WithModel
+.\karaoke-local.ps1 --help
+.\karaoke-local.ps1 produce video.mp4 "Song" --lyrics-file lyrics.txt --audio audio.m4a --project projects/song --theme not_equal_me
+```
+
+`-MainOnly` 用于安装主程序、编辑 ASS 和烧录已有时间轴；`-DryRun` 显示安装步骤；`-Config` 选择 TOML 文件；`-BuildWeb` 重建界面。便携式环境可把全部安装数据集中到指定磁盘，例如：
+
+```powershell
+$env:UV_CACHE_DIR = "D:\karaoke-demo\cache\uv"
+$env:UV_PYTHON_INSTALL_DIR = "D:\karaoke-demo\python"
+$env:UV_TOOL_DIR = "D:\karaoke-demo\tools\envs"
+$env:UV_TOOL_BIN_DIR = "D:\karaoke-demo\tools\bin"
+$env:TEMP = "D:\karaoke-demo\temp"
+$env:TMP = $env:TEMP
+$env:HF_HOME = "D:\karaoke-demo\cache\huggingface"
+$env:TORCH_HOME = "D:\karaoke-demo\cache\torch"
+New-Item -ItemType Directory -Force $env:TEMP | Out-Null
+.\scripts\setup-windows.ps1 -MainOnly
+```
+
+将仓库放在相同磁盘后，应用环境 `.venv` 与对齐环境 `.runtime/align` 也会创建在该磁盘。FFmpeg 可加入当前会话的 PATH，或通过 `[tools]` 设置所在路径。uv 与 FFmpeg 获取方式见 [uv 安装说明](https://docs.astral.sh/uv/getting-started/installation/) 和 [FFmpeg 下载页](https://ffmpeg.org/download.html)。
 
 ## 模型下载
 
@@ -203,13 +232,30 @@ chinese_path = "fonts/my-chinese-font.ttf"
 
 `examples/render-job.json` 展示输入、主题、字幕、画布和音轨配置。中文字幕格式见 `examples/translation.json`：每条包含从 0 开始的 `index`、对应日文 `source_text` 和中文 `text`，文件外层使用 `schema_version: 1`、`language: zh-Hans` 和 `lines` 数组，时间由日文轨迹继承。`end_index` 可用于延长某条中文显示到后续句末。
 
-## 开发与打包
+## 自动化与接口
+
+批量制作或外部程序调用以 CLI 为入口：`produce` 执行整套流程，`resume` 继续项目，`render-job` 接受正式 JSON 作业。最终结果写到标准输出，阶段进度写到标准错误；退出码 0 表示成功，1 表示执行失败，2 表示需要处理歌词宽度。外部程序可据此读取结果和输出文件路径。
+
+编辑器提供本地 REST 接口与任务 SSE 事件流。运行 `serve` 后，浏览器会打开带会话参数的地址；接口说明由服务的 `/docs` 页面生成。主要接口如下：
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/project` | 读取歌词、读音、时间与项目状态 |
+| `POST /api/import` | 上传歌词和媒体输入 |
+| `POST /api/lines/{line_id}/reading` | 更新一段读音 |
+| `POST /api/lines/{line_id}/timing` | 更新逐音时间边界 |
+| `POST /api/jobs/align` | 启动整曲对齐 |
+| `GET /api/jobs/{job_id}/events` | 获取 SSE 阶段进度 |
+| `POST /api/jobs/{job_id}/cancel` | 取消对齐任务 |
+| `GET /api/export.ass` | 下载字幕模板 |
+
+API 请求使用启动地址里的会话 token，可作为 `X-Karaoke-Token` 请求头。完整视频制作通过 CLI 或 JSON 作业调用；REST 接口服务于项目编辑和对齐。
+
+自定义模型通过 `[model]` 的 Hugging Face 模型 ID、revision、说明链接、许可和缓存位置配置。当前对齐后端是 Yohane 的 Wav2Vec2 CTC，使用日文罗马音转录，因此模型的 tokenizer 和输出词表应与这些演唱单位匹配。`[runtime].device` 可设置为 `cpu`、`cuda` 或 `mps`。模型配置用于新建项目，已有项目保留记录中的模型版本。
+
+## 打包与上传
 
 ```bash
-uv sync --all-extras
-npm --prefix web ci
-npm --prefix web run build
-uv run pytest
 uv build
 ```
 
