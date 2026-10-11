@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "karaoke-studio"
+version = "0.1.0"
+description = "Local-first Japanese karaoke alignment and editing studio"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Karaoke Studio contributors" }]
+dependencies = [
+  "fastapi>=0.116,<1",
+  "fugashi[unidic-lite]>=1.4,<2",
+  "numpy>=2,<3",
+  "pillow>=11,<13",
+  "pydantic>=2.11,<3",
+  "pykakasi>=2.3,<3",
+  "python-multipart>=0.0.20,<1",
+  "typer>=0.16,<1",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28,<1",
+  "pytest>=8.4,<9",
+  "pytest-cov>=6.2,<7",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+karaoke = "karaoke_studio.launcher:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/karaoke_studio"]
+artifacts = ["src/karaoke_studio/static/**", "src/karaoke_studio/assets/**", "src/karaoke_studio/config/**"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.uv-cache",
+  "/.venv",
+  "/dist",
+  "/web/node_modules",
+  "/web/dist",
+  "/web/*.tsbuildinfo",
+  "/web/vite.config.js",
+  "/web/vite.config.d.ts",
+  "/web/playwright.config.js",
+  "/web/playwright.config.d.ts",
+  "/.runtime",
+  "/.claude",
+  "/projects",
+  "/models",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schemas" = "karaoke_studio/schemas"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["model: requires the separately licensed model and dedicated Yohane runtime"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/karaoke_studio/ass.py" = ["E501"]
+"src/karaoke_studio/api.py" = ["B008"]
+"src/karaoke_studio/cli.py" = ["B008"]
+"src/karaoke_studio/derived_ass.py" = ["E501"]

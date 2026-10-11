@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "source_ass": "source.ass",
+  "output_ass": "karaoke.ass",
+  "theme": "not_equal_me",
+  "title_text": "Song/My Group",
+  "audio_end": 120.0,
+  "media": {"video": "video.mp4", "audio": "audio.m4a", "trim_start": "0:00", "trim_end": "2:00", "output_dir": "output"}
+}

@@ -1,0 +1,14 @@
+# Overlay merged with the application defaults
+[production]
+default_theme = "my_group"
+
+[groups.my_group]
+label = "My Group"
+sung = "#00B379"
+
+[appearance]
+main_size = 96
+width_limit = 1700
+
+[encoder]
+crf = 18

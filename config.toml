@@ -1,0 +1,120 @@
+# Karaoke Studio application defaults
+[tools]
+ffmpeg = "ffmpeg"
+ffprobe = "ffprobe"
+
+[runtime]
+yohane_python = ""
+device = "cpu"
+
+[model]
+id = "NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn"
+revision = "a5bc320991c4b97a887a0b7784a5652d4a22fd2a"
+url = "https://huggingface.co/NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn"
+license = "CC-BY-NC-SA-4.0"
+cache_dir = ""
+
+[yohane]
+repository = "https://github.com/Japan7/yohane.git"
+revision = "5d10abefb5b63c902c162cdda0640274418ae8d7"
+packages = ["torch==2.11.0", "torchaudio==2.11.0", "transformers==5.7.0", "huggingface_hub==1.25.1", "soundfile==0.14.0", "pysubs2==1.8.1", "numpy==2.5.1"]
+
+[fonts]
+japanese_family = "Noto Sans CJK JP"
+japanese_path = "bundle:assets/fonts/NotoSansCJKjp-Regular.otf"
+chinese_family = "Noto Sans CJK JP"
+chinese_path = "bundle:assets/fonts/NotoSansCJKjp-Regular.otf"
+
+[appearance]
+main_size = 96
+width_limit = 1700
+ruby_ratio = 0.5
+ruby_rise_ratio = 0.85
+bold = true
+outline = 3.0
+title_size = 48
+title_y = 96
+title_outline = 3.2
+chinese_size = 48
+chinese_outline = 1.6
+chinese_glow = 6.0
+chinese_blur = 4.0
+
+[layout]
+canvas_width = 1920
+canvas_height = 1080
+margin_x = 110.0
+top_y = 750.0
+bottom_y = 950.0
+
+[production]
+default_theme = "nogizaka46"
+
+[encoder]
+video_codec = "libx264"
+preset = "medium"
+crf = 18
+pixel_format = "yuv420p"
+audio_codec = "aac"
+audio_bitrate = "320k"
+movflags = "+faststart"
+
+[groups.nogizaka46]
+label = "乃木坂46"
+light = "#F5E8FF"
+mid = "#6A2FC0"
+sung = "#8B4FD8"
+unsung_fill = "#FFFFFF"
+unsung_outline = "#000000"
+sung_outline = "#FFFFFF"
+title_outline = "#FFFFFF"
+
+[groups.hinatazaka46]
+label = "日向坂46"
+light = "#E8F6FF"
+mid = "#5AB0E0"
+sung = "#3399FF"
+unsung_fill = "#FFFFFF"
+unsung_outline = "#000000"
+sung_outline = "#FFFFFF"
+title_outline = "#FFFFFF"
+
+[groups.sakurazaka46]
+label = "櫻坂46"
+light = "#F9D8EC"
+mid = "#E078B0"
+sung = "#F8B8E0"
+unsung_fill = "#FFFFFF"
+unsung_outline = "#000000"
+sung_outline = "#FFFFFF"
+title_outline = "#FFFFFF"
+
+[groups.keyakizaka46]
+label = "欅坂46"
+light = "#D9F5D9"
+mid = "#6FCFA8"
+sung = "#1A6B4A"
+unsung_fill = "#FFFFFF"
+unsung_outline = "#000000"
+sung_outline = "#FFFFFF"
+title_outline = "#FFFFFF"
+
+[groups.not_equal_me]
+label = "≠ME"
+light = "#D6F4E9"
+mid = "#008F61"
+sung = "#00B379"
+unsung_fill = "#FFFFFF"
+unsung_outline = "#000000"
+sung_outline = "#FFFFFF"
+title_outline = "#FFFFFF"
+
+[groups.red]
+label = "红色"
+light = "#FFD6D6"
+mid = "#F05560"
+sung = "#D91F32"
+unsung_fill = "#FFFFFF"
+unsung_outline = "#000000"
+sung_outline = "#FFFFFF"
+title_outline = "#FFFFFF"

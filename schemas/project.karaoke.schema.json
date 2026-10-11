@@ -1,0 +1,823 @@
+{
+  "$defs": {
+    "AudioRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "original_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original Sha256"
+        },
+        "prepared_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prepared Path"
+        },
+        "prepared_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prepared Sha256"
+        },
+        "sample_rate": {
+          "default": 16000,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "channels": {
+          "default": 1,
+          "title": "Channels",
+          "type": "integer"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        }
+      },
+      "title": "AudioRecord",
+      "type": "object"
+    },
+    "DisplayToken": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        },
+        "alignable": {
+          "title": "Alignable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "span",
+        "alignable"
+      ],
+      "title": "DisplayToken",
+      "type": "object"
+    },
+    "LineState": {
+      "enum": [
+        "ready",
+        "stale",
+        "aligned",
+        "structural_warning"
+      ],
+      "title": "LineState",
+      "type": "string"
+    },
+    "LyricLine": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "source_index": {
+          "title": "Source Index",
+          "type": "integer"
+        },
+        "paragraph_before": {
+          "default": 0,
+          "title": "Paragraph Before",
+          "type": "integer"
+        },
+        "original": {
+          "title": "Original",
+          "type": "string"
+        },
+        "display_tokens": {
+          "items": {
+            "$ref": "#/$defs/DisplayToken"
+          },
+          "title": "Display Tokens",
+          "type": "array"
+        },
+        "ruby_groups": {
+          "items": {
+            "$ref": "#/$defs/RubyGroup"
+          },
+          "title": "Ruby Groups",
+          "type": "array"
+        },
+        "moras": {
+          "items": {
+            "$ref": "#/$defs/MoraToken"
+          },
+          "title": "Moras",
+          "type": "array"
+        },
+        "yohane_input": {
+          "title": "Yohane Input",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/LineState",
+          "default": "ready"
+        },
+        "warning_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warning Codes",
+          "type": "array"
+        },
+        "reference_time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Time Ms"
+        }
+      },
+      "required": [
+        "id",
+        "source_index",
+        "original",
+        "display_tokens",
+        "ruby_groups",
+        "moras",
+        "yohane_input"
+      ],
+      "title": "LyricLine",
+      "type": "object"
+    },
+    "ModelRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "default": "NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn",
+          "title": "Model Id",
+          "type": "string"
+        },
+        "revision": {
+          "default": "a5bc320991c4b97a887a0b7784a5652d4a22fd2a",
+          "title": "Revision",
+          "type": "string"
+        },
+        "license": {
+          "default": "CC-BY-NC-SA-4.0",
+          "title": "License",
+          "type": "string"
+        },
+        "license_accepted_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Accepted At"
+        },
+        "resolved_snapshot": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved Snapshot"
+        },
+        "checksums": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Checksums",
+          "type": "object"
+        }
+      },
+      "title": "ModelRecord",
+      "type": "object"
+    },
+    "MoraToken": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kana": {
+          "title": "Kana",
+          "type": "string"
+        },
+        "romaji": {
+          "title": "Romaji",
+          "type": "string"
+        },
+        "group_id": {
+          "title": "Group Id",
+          "type": "string"
+        },
+        "display_token_id": {
+          "title": "Display Token Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kana",
+        "romaji",
+        "group_id",
+        "display_token_id"
+      ],
+      "title": "MoraToken",
+      "type": "object"
+    },
+    "OverrideHistory": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "line_id": {
+          "title": "Line Id",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        },
+        "before": {
+          "additionalProperties": true,
+          "title": "Before",
+          "type": "object"
+        },
+        "after": {
+          "additionalProperties": true,
+          "title": "After",
+          "type": "object"
+        },
+        "author": {
+          "title": "Author",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "line_id",
+        "span",
+        "before",
+        "after",
+        "author",
+        "reason"
+      ],
+      "title": "OverrideHistory",
+      "type": "object"
+    },
+    "RawAlignedLine": {
+      "additionalProperties": false,
+      "properties": {
+        "line_id": {
+          "title": "Line Id",
+          "type": "string"
+        },
+        "start_ms": {
+          "minimum": 0,
+          "title": "Start Ms",
+          "type": "integer"
+        },
+        "end_ms": {
+          "minimum": 0,
+          "title": "End Ms",
+          "type": "integer"
+        },
+        "k_values_cs": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": "K Values Cs",
+          "type": "array"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Labels",
+          "type": "array"
+        }
+      },
+      "required": [
+        "line_id",
+        "start_ms",
+        "end_ms",
+        "k_values_cs"
+      ],
+      "title": "RawAlignedLine",
+      "type": "object"
+    },
+    "RawAlignment": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_key": {
+          "title": "Cache Key",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "adapter_version": {
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "model_revision": {
+          "title": "Model Revision",
+          "type": "string"
+        },
+        "audio_sha256": {
+          "title": "Audio Sha256",
+          "type": "string"
+        },
+        "normalized_romaji_sha256": {
+          "title": "Normalized Romaji Sha256",
+          "type": "string"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/RawAlignedLine"
+          },
+          "title": "Lines",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cache_key",
+        "adapter_version",
+        "model_id",
+        "model_revision",
+        "audio_sha256",
+        "normalized_romaji_sha256",
+        "lines"
+      ],
+      "title": "RawAlignment",
+      "type": "object"
+    },
+    "ReadingSource": {
+      "enum": [
+        "user_override",
+        "agent_override",
+        "explicit_ruby",
+        "mecab_unidic",
+        "local_fallback",
+        "display_only"
+      ],
+      "title": "ReadingSource",
+      "type": "string"
+    },
+    "RubyGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        },
+        "display_token_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Display Token Ids",
+          "type": "array"
+        },
+        "display": {
+          "title": "Display",
+          "type": "string"
+        },
+        "reading": {
+          "title": "Reading",
+          "type": "string"
+        },
+        "mora_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mora Ids",
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/ReadingSource"
+        },
+        "synthetic_breaks": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Synthetic Breaks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "span",
+        "display_token_ids",
+        "display",
+        "reading",
+        "mora_ids",
+        "source"
+      ],
+      "title": "RubyGroup",
+      "type": "object"
+    },
+    "SourceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "lyrics_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lyrics Path"
+        },
+        "lyrics_format": {
+          "anyOf": [
+            {
+              "enum": [
+                "txt",
+                "lrc",
+                "ass"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lyrics Format"
+        },
+        "audio_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Path"
+        },
+        "video_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Path"
+        },
+        "legacy_parentheses_ruby": {
+          "default": false,
+          "title": "Legacy Parentheses Ruby",
+          "type": "boolean"
+        },
+        "preserve_ass_timing": {
+          "default": false,
+          "title": "Preserve Ass Timing",
+          "type": "boolean"
+        },
+        "imported_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Imported At"
+        }
+      },
+      "title": "SourceRecord",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    },
+    "StructuralIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "line_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line Id"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "StructuralIssue",
+      "type": "object"
+    },
+    "TimingPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "line_id": {
+          "title": "Line Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "line_shift",
+            "boundary",
+            "line_start",
+            "line_end",
+            "restore"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "boundary_index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Boundary Index"
+        },
+        "before_ms": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Before Ms",
+          "type": "array"
+        },
+        "after_ms": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "After Ms",
+          "type": "array"
+        },
+        "author": {
+          "default": "user",
+          "title": "Author",
+          "type": "string"
+        },
+        "reason": {
+          "default": "manual timeline edit",
+          "title": "Reason",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "line_id",
+        "kind",
+        "before_ms",
+        "after_ms"
+      ],
+      "title": "TimingPatch",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "core_version": {
+      "default": "0.1.0",
+      "title": "Core Version",
+      "type": "string"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceRecord"
+    },
+    "audio": {
+      "$ref": "#/$defs/AudioRecord"
+    },
+    "model": {
+      "$ref": "#/$defs/ModelRecord"
+    },
+    "lines": {
+      "items": {
+        "$ref": "#/$defs/LyricLine"
+      },
+      "title": "Lines",
+      "type": "array"
+    },
+    "raw_alignment": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RawAlignment"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "alignment_stale": {
+      "default": false,
+      "title": "Alignment Stale",
+      "type": "boolean"
+    },
+    "alignment_source": {
+      "anyOf": [
+        {
+          "enum": [
+            "yohane",
+            "preserved_ass"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alignment Source"
+    },
+    "timing_patches": {
+      "items": {
+        "$ref": "#/$defs/TimingPatch"
+      },
+      "title": "Timing Patches",
+      "type": "array"
+    },
+    "override_history": {
+      "items": {
+        "$ref": "#/$defs/OverrideHistory"
+      },
+      "title": "Override History",
+      "type": "array"
+    },
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/StructuralIssue"
+      },
+      "title": "Issues",
+      "type": "array"
+    },
+    "read_only": {
+      "default": false,
+      "title": "Read Only",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "project_id",
+    "title"
+  ],
+  "title": "KaraokeProject",
+  "type": "object"
+}

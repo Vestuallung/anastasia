@@ -1,0 +1,460 @@
+{
+  "$defs": {
+    "FrameSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "preserve",
+          "enum": [
+            "preserve",
+            "pad"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "target_width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Width"
+        },
+        "target_height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Height"
+        }
+      },
+      "title": "FrameSettings",
+      "type": "object"
+    },
+    "LayoutSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "canvas_mode": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "video",
+            "source_ass",
+            "fixed"
+          ],
+          "title": "Canvas Mode",
+          "type": "string"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "margin_x": {
+          "minimum": 0,
+          "title": "Margin X",
+          "type": "number"
+        },
+        "top_y": {
+          "minimum": 0,
+          "title": "Top Y",
+          "type": "number"
+        },
+        "bottom_y": {
+          "minimum": 0,
+          "title": "Bottom Y",
+          "type": "number"
+        }
+      },
+      "title": "LayoutSettings",
+      "type": "object"
+    },
+    "MediaSettings": {
+      "additionalProperties": false,
+      "description": "Media inputs. Old mode/audio/output fields remain accepted for job-file compatibility.",
+      "properties": {
+        "mode": {
+          "default": "on_vocal",
+          "enum": [
+            "on_vocal",
+            "matched_external"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "video": {
+          "format": "path",
+          "title": "Video",
+          "type": "string"
+        },
+        "audio": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio"
+        },
+        "external_audio": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Audio"
+        },
+        "match_reference_audio": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match Reference Audio"
+        },
+        "trim_start": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "default": 0,
+          "title": "Trim Start"
+        },
+        "trim_end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Trim End"
+        },
+        "output_dir": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Dir"
+        },
+        "on_vocal_output": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Vocal Output"
+        },
+        "off_vocal_output": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Off Vocal Output"
+        },
+        "frame": {
+          "$ref": "#/$defs/FrameSettings"
+        },
+        "pad_to_1080p": {
+          "default": false,
+          "title": "Pad To 1080P",
+          "type": "boolean"
+        },
+        "prefer_early_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 8,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prefer Early Seconds"
+        },
+        "minimum_correlation": {
+          "default": 0.6,
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Minimum Correlation",
+          "type": "number"
+        },
+        "minimum_margin": {
+          "default": 0.03,
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Minimum Margin",
+          "type": "number"
+        }
+      },
+      "required": [
+        "video",
+        "trim_end"
+      ],
+      "title": "MediaSettings",
+      "type": "object"
+    },
+    "TranslationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "format": "path",
+          "title": "File",
+          "type": "string"
+        },
+        "combined_ass": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Combined Ass"
+        },
+        "zh_only_ass": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Zh Only Ass"
+        },
+        "position": {
+          "default": "bottom_left",
+          "enum": [
+            "bottom_left",
+            "bottom_center",
+            "bottom_right",
+            "custom"
+          ],
+          "title": "Position",
+          "type": "string"
+        },
+        "alignment": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alignment"
+        },
+        "x": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "X"
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Y"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "title": "TranslationSettings",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Formal downstream job. Relative paths resolve from the JSON directory.",
+  "properties": {
+    "schema_version": {
+      "default": 2,
+      "maximum": 2,
+      "minimum": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_ass": {
+      "format": "path",
+      "title": "Source Ass",
+      "type": "string"
+    },
+    "output_ass": {
+      "format": "path",
+      "title": "Output Ass",
+      "type": "string"
+    },
+    "theme": {
+      "title": "Theme",
+      "type": "string"
+    },
+    "colors": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Colors",
+      "type": "object"
+    },
+    "reuse_outputs": {
+      "default": true,
+      "title": "Reuse Outputs",
+      "type": "boolean"
+    },
+    "title_text": {
+      "default": "",
+      "title": "Title Text",
+      "type": "string"
+    },
+    "audio_end": {
+      "exclusiveMinimum": 0,
+      "title": "Audio End",
+      "type": "number"
+    },
+    "subtitle_offset": {
+      "default": 0.0,
+      "title": "Subtitle Offset",
+      "type": "number"
+    },
+    "translation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TranslationSettings"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "media": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MediaSettings"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "outputs": {
+      "anyOf": [
+        {
+          "items": {
+            "enum": [
+              "on_vocal_karaoke",
+              "off_vocal_karaoke",
+              "on_vocal_karaoke_zh",
+              "on_vocal_zh_only"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Outputs"
+    },
+    "layout": {
+      "$ref": "#/$defs/LayoutSettings"
+    }
+  },
+  "required": [
+    "source_ass",
+    "output_ass",
+    "audio_end"
+  ],
+  "title": "RenderJob",
+  "type": "object"
+}

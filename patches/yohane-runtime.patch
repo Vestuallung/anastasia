@@ -1,0 +1,90 @@
+diff --git a/yohane/audio.py b/yohane/audio.py
+index f28d602..f43474f 100644
+--- a/yohane/audio.py
++++ b/yohane/audio.py
+@@ -1,4 +1,5 @@
+ import logging
++import os
+ from abc import ABC, abstractmethod
+ from typing import Callable, cast
+ 
+@@ -14,6 +15,17 @@ logger = logging.getLogger(__name__)
+ TokenizerFn = Callable[[list[str]], list[list[int]]]
+ 
+ 
++def _best_device() -> torch.device:
++    requested = os.environ.get("YOHANE_DEVICE", "").strip()
++    if requested:
++        return torch.device(requested)
++    if torch.cuda.is_available():
++        return torch.device("cuda")
++    if torch.backends.mps.is_available():
++        return torch.device("mps")
++    return torch.device("cpu")
++
++
+ class ForcedAligner(ABC):
+     @abstractmethod
+     def tokenize(
+@@ -41,7 +53,7 @@ class TorchAudioForcedAligner(ForcedAligner):
+         super().__init__()
+         self.tokenizer = self.bundle.get_tokenizer()
+         self.model = self.bundle.get_model()
+-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # pyright: ignore[reportPrivateImportUsage]
++        self.device = _best_device()
+         self.model.to(self.device)
+         self.aligner = self.bundle.get_aligner()
+ 
+@@ -65,7 +77,7 @@ class Wav2Vec2ForcedAligner(ForcedAligner):
+         self.model_id = model
+         self.processor = Wav2Vec2Processor.from_pretrained(model)
+         self.model = Wav2Vec2ForCTC.from_pretrained(model)
+-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # pyright: ignore[reportPrivateImportUsage]
++        self.device = _best_device()
+         self.model.to(self.device)  # pyright: ignore[reportArgumentType]
+         blank = self.model.config.pad_token_id
+         assert blank is not None
+@@ -91,7 +103,7 @@ class Wav2Vec2ForcedAligner(ForcedAligner):
+         )
+         with torch.inference_mode():
+             outputs = self.model(**inputs.to(self.device))
+-            emission = torch.nn.functional.log_softmax(outputs.logits, dim=-1)
++            emission = torch.nn.functional.log_softmax(outputs.logits, dim=-1).cpu()
+         token_spans = _align_token_spans(emission[0], tokens, blank=self.blank)
+         return emission, token_spans
+ 
+diff --git a/yohane/pipeline.py b/yohane/pipeline.py
+index e436c06..c7d2311 100644
+--- a/yohane/pipeline.py
++++ b/yohane/pipeline.py
+@@ -1,9 +1,9 @@
+ import logging
+ from pathlib import Path
+ 
++import soundfile as sf
+ import torch
+ from torchaudio.functional import TokenSpan, resample
+-from torchcodec.decoders._audio_decoder import AudioDecoder
+ 
+ from yohane.audio import (
+     ForcedAligner,
+@@ -41,12 +41,15 @@ class Yohane:
+ 
+     def load_song(self, song_file: Path):
+         logger.info("Loading song")
+-        audio = AudioDecoder(song_file.as_posix())
+-        samples = audio.get_all_samples()
+-        waveform = samples.data
++        samples, sample_rate = sf.read(
++            song_file.as_posix(),
++            dtype="float32",
++            always_2d=True,
++        )
++        waveform = torch.from_numpy(samples.T.copy())
+         if waveform.size(0) > 2:
+             waveform = waveform.mean(dim=0, keepdim=True).repeat(2, 1)
+-        self.song = (waveform, samples.sample_rate)
++        self.song = (waveform, sample_rate)
+ 
+     def extract_vocals(self):
+         if self.separator is None:

@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -eu
+KARAOKE_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export KARAOKE_HOME
+exec uv run --project "$KARAOKE_HOME" karaoke "$@"
