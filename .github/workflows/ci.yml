@@ -2,7 +2,10 @@ name: CI
 on: [push, pull_request]
 jobs:
   package:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -13,5 +16,10 @@ jobs:
       - run: npm --prefix web ci
       - run: npm --prefix web test -- --run
       - run: npm --prefix web run build
+      - run: uv run ruff check src scripts tests
       - run: uv run pytest
       - run: uv build
+      - name: Windows setup plan
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/setup-windows.ps1 -DryRun -WithModel

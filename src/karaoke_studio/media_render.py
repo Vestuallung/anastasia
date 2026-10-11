@@ -137,14 +137,20 @@ def resolve_output_canvas(
     return Canvas(_even(width * float(sar)), _even(height))
 
 
+def _filter_option(value: str) -> str:
+    """Escape an option value at both FFmpeg filter parsing levels."""
+    for char in ("\\", "'", ":"):
+        value = value.replace(char, "\\" + char)
+    for char in ("\\", "'", "[", "]", ",", ";"):
+        value = value.replace(char, "\\" + char)
+    return value
+
+
 def _ass_filter(path: Path, fonts_directory: Path | None = None) -> str:
-    escaped = str(path.resolve()).replace("\\", r"\\").replace(":", r"\:")
-    escaped = escaped.replace("'", r"\'").replace(",", r"\,")
-    fonts = str(
-        (fonts_directory or configured_path(section("fonts")["japanese_path"]).parent).resolve()
-    )
-    fonts = fonts.replace("\\", r"\\").replace(":", r"\:").replace("'", r"\'").replace(",", r"\,")
-    return f"ass='{escaped}':fontsdir='{fonts}'"
+    source = _filter_option(path.resolve().as_posix())
+    directory = fonts_directory or configured_path(section("fonts")["japanese_path"]).parent
+    fonts = _filter_option(directory.resolve().as_posix())
+    return f"ass=filename={source}:fontsdir={fonts}"
 
 
 def _video_filter(
@@ -373,7 +379,10 @@ def render_outputs(
                 inputs.append(on_vocal_audio)
             signature = {
                 "command": [
-                    arg.replace(str(fonts_directory), "{configured_fonts}") for arg in command
+                    arg.replace(
+                        _filter_option(fonts_directory.resolve().as_posix()), "{configured_fonts}"
+                    )
+                    for arg in command
                 ],
                 "fonts": [file_identity(path) for path in font_paths],
                 "inputs": [file_identity(path) for path in inputs if path is not None],

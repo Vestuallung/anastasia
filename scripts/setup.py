@@ -32,6 +32,8 @@ def main() -> None:
     def run(command: list[str]) -> None:
         print(" ".join(map(str, command)), flush=True)
         if not args.dry_run:
+            if os.name == "nt" and command[0] == "npm":
+                command = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", *command]
             subprocess.run(command, cwd=ROOT, check=True)
 
     run([uv, "sync", "--python", "3.12", "--all-extras"])
