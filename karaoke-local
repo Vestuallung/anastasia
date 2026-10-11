@@ -2,4 +2,7 @@
 set -eu
 KARAOKE_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 export KARAOKE_HOME
-exec uv run --project "$KARAOKE_HOME" karaoke "$@"
+if [ -f "$KARAOKE_HOME/.runtime/environment.sh" ]; then
+    . "$KARAOKE_HOME/.runtime/environment.sh"
+fi
+exec "${KARAOKE_UV:-uv}" run --project "$KARAOKE_HOME" karaoke "$@"

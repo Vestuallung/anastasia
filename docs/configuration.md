@@ -25,3 +25,9 @@
 环境变量 `KARAOKE_FFMPEG`、`KARAOKE_FFPROBE`、`KARAOKE_YOHANE_PYTHON` 可覆盖工具路径。`KARAOKE_HOME` 指定源码安装的运行根目录。设置通过启动时加载；重新运行命令或浏览器服务会应用更新。
 
 模型配置用于新建项目。已有项目保留其模型 ID 与 revision；制作参数和对齐记录随项目保存。
+
+## 安装配置
+
+`installer.toml` 保存 uv、Windows 便携式工具、macOS Homebrew 和 Linux 系统包的下载地址及包名。macOS 使用带 libass 的 `ffmpeg-full`，脚本读取其安装前缀。Windows 与 Linux 默认 CPU 环境从 PyTorch CPU 索引安装 torch、torchaudio，其余包按常规索引安装。
+
+`install.ps1 -DataDir PATH` 或 `sh install.sh --data-dir PATH` 指定主环境、对齐环境、Python、缓存和模型所在目录。安装结果记录到项目 `.runtime/environment.sh` 与 `environment.ps1`；启动入口自动读取。使用 `-Config FILE` 或 `--config FILE` 可在安装时选择应用配置。

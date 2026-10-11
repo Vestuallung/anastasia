@@ -1,0 +1,20 @@
+# Download sources and package-manager choices for the one-command installer.
+[uv]
+unix_installer = "https://astral.sh/uv/0.13.0/install.sh"
+windows_archive = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-pc-windows-msvc.zip"
+
+[windows]
+git_archive = "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/MinGit-2.56.0.2-64-bit.zip"
+ffmpeg_archive = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip"
+
+[macos]
+homebrew_installer = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+brew_candidates = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+packages = ["git", "ffmpeg-full"]
+ffmpeg_formula = "ffmpeg-full"
+
+[linux]
+packages = ["git", "ffmpeg"]
+
+[alignment]
+cpu_index_url = "https://download.pytorch.org/whl/cpu"

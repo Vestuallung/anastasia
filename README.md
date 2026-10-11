@@ -1,195 +1,157 @@
-# Karaoke Studio
+<div align="center">
 
-Karaoke Studio 是一套本地日文卡拉 OK 制作工作台。输入视频、演唱音频和逐行歌词，即可完成读音解析、歌词时间对齐、动态字幕生成和视频输出。项目同时提供命令行流程与浏览器时间轴编辑器，适合单曲制作、字幕调整与连续重跑。
+# ♬ anastasia
 
-## 功能
+**Karaoke Studio**
 
-- **完整制作**：`produce` 依次执行歌词解析、输入归档、16 kHz 单声道音频准备、Yohane 强制对齐、ASS 模板导出、字幕展开和视频编码。
-- **歌词与注音**：支持 TXT、LRC、ASS 导入，以及 `漢字《かな》` 显式注音。换行、空格、标点和大小写按输入保留；空行作为段落信息处理。
-- **日文读音准备**：MeCab/UniDic 与 pykakasi 提供假名和罗马音；显式注音及读音覆盖文件用于指定人名、专名和英文读音。
-- **逐音时间对齐**：Yohane 根据音频和罗马音计算每个演唱单位的时值，原始对齐记录保存在项目中。
-- **连续扫色字幕**：正文和注音随演唱连续变色。默认正文为 96 逻辑像素，注音为正文的一半，未唱白字黑边，已唱团体色白边。
-- **团体主题**：附带乃木坂46、日向坂46、櫻坂46、欅坂46、≠ME 和红色主题。新增团体可直接编辑 TOML 配置。
-- **宽度计算**：按实际配置字体测量歌词宽度，默认上限 1700 逻辑像素。超宽报告包含句子、下标、时间与宽度，便于调整断句后继续制作。
-- **视频截取**：支持起止时间、独立演唱音频、原画面比例输出以及指定尺寸的等比缩放和居中补黑。
-- **多版本导出**：支持演唱版、伴奏版、日中双语演唱版和纯中文字幕演唱版。伴奏音轨使用开头匹配计算偏移；中文时间继承日文时间轴。
-- **阶段复用**：`resume` 根据输入与参数变化复用已有步骤。改色、位置和标题会重新生成字幕；`--force-render` 强制重新编码视频。
-- **浏览器编辑器**：包含视频预览、假名显示、波形、逐音时间轴、整句移动、相邻时间边界拖动、读音编辑、撤销重做以及 ASS 下载。
-- **可配置运行环境**：工具路径、字体、主题、布局、模型、推理设备与编码参数统一由 `config.toml` 管理。
+把一份歌词，变成会唱的字幕。
 
-## 技术栈
+[![CI](https://github.com/Vestuallung/anastasia/actions/workflows/ci.yml/badge.svg)](https://github.com/Vestuallung/anastasia/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Platforms](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-6366F1)
+![License](https://img.shields.io/badge/Code-MIT-22C55E)
+![Demo](https://img.shields.io/badge/Status-Demo-F59E0B)
 
-| 部分 | 技术 |
+[简体中文](README.zh_CN.md) · [English](README.en.md) · [日本語](README.ja.md)
+
+</div>
+
+---
+
+输入 **视频 + 演唱音频 + 逐行歌词**，制作带注音、连续扫色和团体配色的日文卡拉 OK。命令行完成整套制作，浏览器时间轴用于调整读音与演唱时值。
+
+## 从歌词到成片
+
+**歌词与注音 → 音频准备 → Yohane 对齐 → ASS 字幕 → FFmpeg 成片**
+
+| 功能 | 内容 |
 | --- | --- |
-| 主程序与命令行 | Python 3.12、Typer、Pydantic |
-| 浏览器服务 | FastAPI、Uvicorn、REST/SSE |
-| 前端编辑器 | React、TypeScript、Vite、JASSUB |
-| 日文文本处理 | fugashi/MeCab、UniDic-lite、pykakasi |
-| 音频对齐 | Yohane、PyTorch、Torchaudio、Transformers |
-| 字幕与视频 | ASS、Pillow、FFmpeg/libass |
-| 安装与构建 | uv、Hatchling、npm |
+| 歌词解析 | TXT、LRC、ASS；`漢字《かな》` 显式注音；保留原始换行、空格、标点 |
+| 逐音对齐 | 用演唱音频和罗马音计算时值，保存原始对齐记录 |
+| 动态字幕 | 正文与注音连续扫色；默认 96px；实际字体测宽 |
+| 团体配色 | 乃木坂46、日向坂46、櫻坂46、欅坂46、≠ME；自定义名称与颜色 |
+| 视频处理 | 起止截取、独立音轨、等比缩放、居中补黑 |
+| 多版本输出 | 演唱版、伴奏版、日中双语版、纯中文字幕版 |
+| 时间轴编辑 | 波形预览、逐音拖动、整句移动、读音调整、撤销与重做 |
+| 自动化 | 一条命令制作、阶段复用、正式 JSON 作业、结果与进度输出 |
 
-## 安装
+## 一键安装
 
-入口覆盖 Windows、macOS 和 Linux。GitHub CI 在三个系统上运行后端测试、前端测试及安装包构建。
+在 GitHub 选择 **Code → Download ZIP**，解压并进入项目文件夹。也可以使用 `git clone https://github.com/Vestuallung/anastasia.git`。
 
-准备 Python 3.12、[uv](https://docs.astral.sh/uv/getting-started/installation/)、Git，以及带 `ass` 滤镜的 [FFmpeg/ffprobe](https://ffmpeg.org/download.html)。前端开发和重新构建使用 Node.js 22。
+### Windows · x64
 
-在仓库根目录运行：
-
-```bash
-python scripts/setup.py --with-model
-```
-
-安装脚本创建主程序环境 `.venv` 和对齐环境 `.runtime/align`，按配置中的固定 revision 获取 Yohane，应用 `patches/yohane-runtime.patch`，安装对齐依赖，并下载配置中的模型到 Hugging Face 缓存。
-
-分开运行安装与模型下载：
-
-```bash
-python scripts/setup.py
-python scripts/download_model.py
-```
-
-安装参数：
-
-| 参数 | 用途 |
-| --- | --- |
-| `--config config.local.toml` | 使用自定义配置文件 |
-| `--main-only` | 安装主程序环境，适合 ASS 编辑和已有轨迹渲染 |
-| `--build-web` | 安装前端依赖并重建编辑器 |
-| `--with-model` | 环境安装结束后下载模型 |
-| `--dry-run` | 输出安装步骤供查看 |
-
-仓库提供已构建的浏览器界面及 Noto 字体，安装后即可使用。
-
-### Windows PowerShell
-
-准备 uv、Git 和带 ASS 滤镜的 Windows FFmpeg，运行以下入口。uv 会按项目要求准备 Python 3.12，并在项目目录创建独立环境：
+将项目放到希望使用的磁盘，例如 `D:\anastasia`，在该文件夹打开 PowerShell：
 
 ```powershell
-.\scripts\setup-windows.ps1 -WithModel
-.\karaoke-local.ps1 --help
-.\karaoke-local.ps1 produce video.mp4 "Song" --lyrics-file lyrics.txt --audio audio.m4a --project projects/song --theme not_equal_me
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-`-MainOnly` 用于安装主程序、编辑 ASS 和烧录已有时间轴；`-DryRun` 显示安装步骤；`-Config` 选择 TOML 文件；`-BuildWeb` 重建界面。便携式环境可把全部安装数据集中到指定磁盘，例如：
+脚本自动准备 uv、Python 3.12、便携式 Git 和 FFmpeg，安装主程序与对齐环境，并下载配置中的模型。默认安装数据位于项目的 `.runtime`；工具和缓存随着数据目录存放。
+
+指定数据盘：
 
 ```powershell
-$env:UV_CACHE_DIR = "D:\karaoke-demo\cache\uv"
-$env:UV_PYTHON_INSTALL_DIR = "D:\karaoke-demo\python"
-$env:UV_TOOL_DIR = "D:\karaoke-demo\tools\envs"
-$env:UV_TOOL_BIN_DIR = "D:\karaoke-demo\tools\bin"
-$env:TEMP = "D:\karaoke-demo\temp"
-$env:TMP = $env:TEMP
-$env:HF_HOME = "D:\karaoke-demo\cache\huggingface"
-$env:TORCH_HOME = "D:\karaoke-demo\cache\torch"
-New-Item -ItemType Directory -Force $env:TEMP | Out-Null
-.\scripts\setup-windows.ps1 -MainOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -DataDir D:\anastasia-data
 ```
 
-将仓库放在相同磁盘后，应用环境 `.venv` 与对齐环境 `.runtime/align` 也会创建在该磁盘。FFmpeg 可加入当前会话的 PATH，或通过 `[tools]` 设置所在路径。uv 与 FFmpeg 获取方式见 [uv 安装说明](https://docs.astral.sh/uv/getting-started/installation/) 和 [FFmpeg 下载页](https://ffmpeg.org/download.html)。
+### macOS · Apple Silicon / Intel
 
-## 模型下载
-
-默认模型为 [NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn](https://huggingface.co/NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn)，使用 CC BY-NC-SA 4.0 许可。模型权重通过下载脚本获取，模型标识、版本、链接和缓存位置在 `[model]` 中配置。
+在解压后的项目文件夹打开终端：
 
 ```bash
-python scripts/download_model.py --print-config
-python scripts/download_model.py --cache-dir ./models/cache
+sh install.sh
 ```
 
-指定缓存目录时，将同一路径填写到配置：
+脚本准备 uv 与 Python 3.12，通过 Homebrew 安装 Git 和带 libass 的 `ffmpeg-full`，然后安装运行环境及模型。Homebrew 首次安装和系统依赖安装期间，按终端提示完成系统授权。应用数据默认位于项目 `.runtime`。
 
-```toml
-[model]
-cache_dir = "models/cache"
+```bash
+sh install.sh --data-dir "$HOME/anastasia-data"
 ```
 
-脚本使用固定 revision 下载完整模型快照。后续运行从配置缓存或 Hugging Face 默认缓存加载。模型版本和快照信息随项目记录保存。其它兼容的 CTC 对齐模型可通过 `[model]` 的 `id`、`revision` 与 `url` 配置。
+### Linux · Ubuntu / Debian
 
-## 制作一首歌
+在项目文件夹打开终端：
 
-歌词文件示例：
+```bash
+sh install.sh
+```
+
+脚本准备 uv 与 Python 3.12，通过 `apt-get` 安装 Git 和 FFmpeg，再安装运行环境及模型。系统软件安装使用 `sudo`；已有依赖会直接复用。脚本还可识别 `dnf`、`pacman` 和 `zypper`，使用所在发行版提供的 Git 与 FFmpeg 包。
+
+```bash
+sh install.sh --data-dir "$HOME/anastasia-data"
+```
+
+### 安装选项与目录
+
+| 目的 | Windows | macOS / Linux |
+| --- | --- | --- |
+| 完整安装与模型下载 | `install.ps1` | `sh install.sh` |
+| 编辑、烧录已有 ASS | `install.ps1 -MainOnly` | `sh install.sh --main-only` |
+| 先装环境，随后下载模型 | `install.ps1 -SkipModel` | `sh install.sh --skip-model` |
+| 指定数据目录 | `-DataDir PATH` | `--data-dir PATH` |
+| 指定应用配置 | `-Config FILE` | `--config FILE` |
+| 查看安装计划 | `-Plan` | `--plan` |
+
+完整命令使用上方各系统的启动方式。安装脚本会记录运行位置，`karaoke-local` 启动时自动读取。
+
+| 数据目录内的路径 | 内容 |
+| --- | --- |
+| `main/`、`align/` | 主程序环境与对齐环境 |
+| `python/`、`tools/` | Python 和便携式工具 |
+| `cache/uv/`、`cache/huggingface/` | 依赖与模型缓存 |
+| `temp/`、`downloads/` | 安装临时文件和下载包 |
+| `yohane/` | 固定版本的对齐后端 |
+
+模型通过下载脚本获取，源码发行包包含程序、预构建界面、字体与下载配置。首次完整安装的时间取决于网络和 PyTorch、模型下载。
+
+## 制作第一首歌
+
+歌词 `lyrics.txt`：
 
 ```text
 歌《うた》を歌《うた》う
 明日《あした》へ歩《ある》こう
 ```
 
-完整制作：
+**Windows PowerShell**
+
+```powershell
+.\karaoke-local.ps1 produce video.mp4 "Song" --lyrics-file lyrics.txt --audio audio.m4a --project projects/song --theme not_equal_me --title-text "Song/≠ME"
+```
+
+**macOS / Linux**
 
 ```bash
 ./karaoke-local produce video.mp4 "Song" \
   --lyrics-file lyrics.txt --audio audio.m4a \
-  --project projects/song --theme not_equal_me \
-  --title-text "Song/≠ME"
+  --project projects/song --theme not_equal_me --title-text "Song/≠ME"
 ```
 
-Windows PowerShell 使用 `./karaoke-local.ps1` 执行相同参数。安装到 Python 环境后，也可直接使用 `karaoke` 命令。
+截取使用 `--trim-start 01:39:01 --trim-end 01:42:42`，时间支持秒数、`分:秒` 和 `时:分:秒`。伴奏音轨使用 `--off-vocal backing.m4a`；译文使用 `--translation translation.json`。参数详情可运行 `produce --help`。
 
-截取某个时间段：
-
-```bash
-./karaoke-local produce concert.mp4 "Song" \
-  --lyrics-file lyrics.txt --audio concert.m4a \
-  --project projects/song --trim-start 01:39:01 --trim-end 01:42:42 \
-  --theme nogizaka46 --title-text "Song/乃木坂46"
-```
-
-时间支持 `秒数`、`分:秒` 和 `时:分:秒`。起止时间同时作用于所选视频与演唱音频；最终编码时截取视频。
-
-继续已有项目：
+继续已有项目或调整颜色：
 
 ```bash
 ./karaoke-local resume projects/song
-./karaoke-local resume projects/song --color '#00B379' --force-render
+./karaoke-local resume projects/song --color "#00B379" --force-render
+./karaoke-local serve projects/song
 ```
 
-### 制作参数
+Windows 将 `./karaoke-local` 换成 `.\karaoke-local.ps1`。`serve` 打开时间轴编辑器；`resume` 根据输入变化复用步骤。超宽报告会列出所有需要调整断句的行，修订后继续运行。
 
-| 参数 | 作用 |
+| 输出 | 内容 |
 | --- | --- |
-| `--lyrics-file` / `--project` | 歌词文件与项目目录 |
-| `--audio` | 独立演唱音轨；默认使用视频内的音频 |
-| `--trim-start` / `--trim-end` | 截取起止时间；默认使用整段视频 |
-| `--theme` | TOML 中的团体主题键名 |
-| `--color` | 本次主色，标题默认继承主色 |
-| `--color-override` | 单独设置唱色、文字填色、描边和标题颜色，可重复使用 |
-| `--title-text` | 右上角标题文字 |
-| `--top-y` / `--bottom-y` / `--margin-x` | 两行歌词位置和水平边距 |
-| `--canvas-width` / `--canvas-height` | 目标画布尺寸，使用等比缩放与居中补黑 |
-| `--off-vocal` | 伴奏音轨，增加伴奏版本 |
-| `--translation` | 中文字幕 JSON，增加双语及纯中文版本 |
-| `--only` | 指定输出版本，可重复使用 |
-| `--force-render` | 强制重新编码 |
+| `on_vocal_karaoke.mp4` | 日文演唱版 |
+| `off_vocal_karaoke.mp4` | 日文伴奏版 |
+| `on_vocal_karaoke_zh.mp4` | 日中双语演唱版 |
+| `on_vocal_zh_only.mp4` | 纯中文字幕演唱版 |
+| `project.karaoke.json` 与 ASS | 可继续编辑的项目与字幕 |
 
-### 输出文件
+## 配置、团体与模型
 
-| 名称 | 内容 |
-| --- | --- |
-| `on_vocal_karaoke.mp4` | 演唱音轨与日文卡拉 OK 字幕 |
-| `off_vocal_karaoke.mp4` | 伴奏音轨与日文卡拉 OK 字幕 |
-| `on_vocal_karaoke_zh.mp4` | 演唱音轨与日中双语字幕 |
-| `on_vocal_zh_only.mp4` | 演唱音轨与中文字幕 |
-| `字幕模板-日期.ass` | 逐音时值与正文注音模板 |
-| `卡拉OK-日期.ass` | 展开后的动态字幕 |
-| `project.karaoke.json` | 歌词、读音、对齐信息及编辑记录 |
-| `.karaoke-work/` | 输入副本、准备音频与复用记录 |
-
-提供的音轨、译文与 `--only` 共同决定本次输出集合。CLI 输出包含阶段进度、编码时间和最终 JSON 结果。
-
-## 配置与自定义团体
-
-根目录的 `config.toml` 保存完整默认值。用户文件会逐项覆盖默认配置：
-
-```bash
-./karaoke-local --config examples/custom-group.toml produce video.mp4 "Song" \
-  --lyrics-file lyrics.txt --project projects/custom
-```
-
-同样可以通过 `KARAOKE_CONFIG` 环境变量指定配置。配置中的相对文件路径以该 TOML 所在目录为起点；`bundle:` 路径指向程序内置资源。
-
-新增一个团体：
+编辑 `config.toml`；单次任务可使用 `--config custom.toml`。配置中的相对路径以该 TOML 所在文件夹为基准。
 
 ```toml
 [groups.my_group]
@@ -200,75 +162,39 @@ sung = "#00B379"
 default_theme = "my_group"
 ```
 
-字体同时配置测宽文件和字幕字体名称：
+| 配置 | 作用 |
+| --- | --- |
+| `[tools]` | FFmpeg、ffprobe 程序名或路径 |
+| `[fonts]` / `[appearance]` / `[layout]` | 字体文件与名称、字号、测宽、位置、描边 |
+| `[groups.*]` / `[encoder]` | 团体颜色、视频与音频编码 |
+| `[model]` | 模型 ID、revision、链接、许可、缓存 |
+| `[runtime]` | 对齐解释器与 `cpu` / `cuda` / `mps` 设备 |
+| `installer.toml` | uv、便携工具下载地址及 CPU 版 PyTorch 源 |
 
-```toml
-[fonts]
-japanese_family = "My Japanese Font"
-japanese_path = "fonts/my-font.ttf"
-chinese_family = "My Chinese Font"
-chinese_path = "fonts/my-chinese-font.ttf"
-```
+默认模型：[NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn](https://huggingface.co/NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn)。自定义模型使用与日文罗马音演唱单位匹配的 **Wav2Vec2 CTC** tokenizer 和输出词表。模型配置用于新建项目，已有项目保留其记录的模型版本。默认安装 CPU 运行环境；更换设备时按所用 PyTorch 构建配置。
 
-完整字段说明见 [配置参考](docs/configuration.md)。
-
-## 浏览器编辑器
-
-```bash
-./karaoke-local serve projects/song
-```
-
-打开命令显示的地址，在歌词列表选择一句即可预览。时间轴支持拖动整句、句首句尾和逐音共享边界；读音面板可修改假名、罗马音及显示文本，编辑结果写入项目。编辑后可导出 ASS，或再次运行 `resume` 完成成片。
-
-## 已有 ASS 与中文字幕
-
-已有对齐轨迹可通过正式渲染作业直接展开：
-
-```bash
-./karaoke-local render-job examples/render-job.json
-./karaoke-local specialize source.ass video.mp4 --trim-end 2:00 \
-  --theme not_equal_me --audio audio.m4a --title-text "Song/≠ME"
-```
-
-`examples/render-job.json` 展示输入、主题、字幕、画布和音轨配置。中文字幕格式见 `examples/translation.json`：每条包含从 0 开始的 `index`、对应日文 `source_text` 和中文 `text`，文件外层使用 `schema_version: 1`、`language: zh-Hans` 和 `lines` 数组，时间由日文轨迹继承。`end_index` 可用于延长某条中文显示到后续句末。
+完整字段见 [配置参考](docs/configuration.md)。独立下载模型可运行 `scripts/download_model.py`，正式渲染作业和中文字幕格式见 [examples](examples/)。
 
 ## 自动化与接口
 
-批量制作或外部程序调用以 CLI 为入口：`produce` 执行整套流程，`resume` 继续项目，`render-job` 接受正式 JSON 作业。最终结果写到标准输出，阶段进度写到标准错误；退出码 0 表示成功，1 表示执行失败，2 表示需要处理歌词宽度。外部程序可据此读取结果和输出文件路径。
+`produce` 执行全流程，`resume` 继续项目，`render-job` 接受 JSON 作业。最终 JSON 结果写到标准输出，阶段进度写到标准错误；退出码 `0` 为成功，`1` 为执行错误，`2` 为歌词超宽。
 
-编辑器提供本地 REST 接口与任务 SSE 事件流。运行 `serve` 后，浏览器会打开带会话参数的地址；接口说明由服务的 `/docs` 页面生成。主要接口如下：
+```bash
+./karaoke-local render-job examples/render-job.json
+```
 
-| 接口 | 用途 |
+编辑器使用 FastAPI REST 与 SSE。启动 `serve` 后，访问服务的 `/docs` 查看参数结构；启动地址里的 token 可作为 `X-Karaoke-Token` 请求头。
+
+| 接口 | 作用 |
 | --- | --- |
-| `GET /api/project` | 读取歌词、读音、时间与项目状态 |
-| `POST /api/import` | 上传歌词和媒体输入 |
-| `POST /api/lines/{line_id}/reading` | 更新一段读音 |
-| `POST /api/lines/{line_id}/timing` | 更新逐音时间边界 |
+| `GET /api/project`、`POST /api/import` | 读取与导入项目 |
+| `POST /api/lines/{line_id}/reading`、`.../timing` | 调整读音与时间 |
 | `POST /api/jobs/align` | 启动整曲对齐 |
-| `GET /api/jobs/{job_id}/events` | 获取 SSE 阶段进度 |
-| `POST /api/jobs/{job_id}/cancel` | 取消对齐任务 |
-| `GET /api/export.ass` | 下载字幕模板 |
+| `GET /api/jobs/{job_id}/events`、`POST .../cancel` | 进度与取消 |
+| `GET /api/export.ass` | 导出字幕模板 |
 
-API 请求使用启动地址里的会话 token，可作为 `X-Karaoke-Token` 请求头。完整视频制作通过 CLI 或 JSON 作业调用；REST 接口服务于项目编辑和对齐。
+## 技术与许可
 
-自定义模型通过 `[model]` 的 Hugging Face 模型 ID、revision、说明链接、许可和缓存位置配置。当前对齐后端是 Yohane 的 Wav2Vec2 CTC，使用日文罗马音转录，因此模型的 tokenizer 和输出词表应与这些演唱单位匹配。`[runtime].device` 可设置为 `cpu`、`cuda` 或 `mps`。模型配置用于新建项目，已有项目保留记录中的模型版本。
+Python 3.12 · Typer · Pydantic · FastAPI · React / TypeScript / Vite · JASSUB · fugashi / UniDic-lite / pykakasi · Yohane / PyTorch / Transformers · Pillow · FFmpeg / libass。
 
-## 打包与上传
-
-```bash
-uv build
-```
-
-目录结构、工作流程和接口说明见 [架构说明](docs/architecture.md)。源码发布目录可以直接建立 Git 仓库并推送。已初始化仓库时，从添加远程仓库开始执行：
-
-```bash
-git init -b main
-git add .
-git commit -m "Prepare Karaoke Studio release"
-git remote add origin https://github.com/YOUR_NAME/karaoke-studio.git
-git push -u origin main
-```
-
-## 许可
-
-Karaoke Studio 程序使用 MIT 许可。Yohane 使用 MIT；Noto 字体使用 SIL OFL 1.1；前端渲染组件保留各自许可。默认模型使用 CC BY-NC-SA 4.0，FFmpeg 的许可由所选发行构建确定。组件来源、补丁与许可文本见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+程序使用 **MIT**，Noto 字体使用 **SIL OFL 1.1**，默认模型使用 **CC BY-NC-SA 4.0**。组件许可与来源见 [第三方说明](THIRD_PARTY_NOTICES.md)。

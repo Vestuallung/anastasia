@@ -22,12 +22,13 @@ def main() -> None:
     parser.add_argument("--with-model", action="store_true")
     parser.add_argument("--build-web", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--runtime-dir", type=Path, default=ROOT / ".runtime")
     args = parser.parse_args()
     if args.config:
         os.environ["KARAOKE_CONFIG"] = str(args.config.resolve())
     from karaoke_studio.config import section
 
-    uv = shutil.which("uv") or "uv"
+    uv = os.environ.get("KARAOKE_UV") or shutil.which("uv") or "uv"
 
     def run(command: list[str]) -> None:
         print(" ".join(map(str, command)), flush=True)
@@ -38,12 +39,12 @@ def main() -> None:
 
     run([uv, "sync", "--python", "3.12", "--all-extras"])
     if not args.main_only:
-        runtime = ROOT / ".runtime"
+        runtime = args.runtime_dir.resolve()
         checkout = runtime / "yohane"
         settings = section("yohane")
         patch = ROOT / "patches/yohane-runtime.patch"
         if not args.dry_run:
-            runtime.mkdir(exist_ok=True)
+            runtime.mkdir(parents=True, exist_ok=True)
         if not (checkout / ".git").exists():
             run(["git", "init", str(checkout)])
             run(["git", "-C", str(checkout), "remote", "add", "origin", settings["repository"]])
@@ -89,7 +90,26 @@ def main() -> None:
         align = runtime / "align"
         python = align / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         run([uv, "venv", "--allow-existing", "--python", "3.12", str(align)])
-        run([uv, "pip", "install", "--python", str(python), *settings["packages"]])
+        packages = settings["packages"]
+        torch_index = os.environ.get("KARAOKE_TORCH_INDEX_URL")
+        if torch_index:
+            torch_packages = [
+                item for item in packages if item.startswith(("torch==", "torchaudio=="))
+            ]
+            run(
+                [
+                    uv,
+                    "pip",
+                    "install",
+                    "--python",
+                    str(python),
+                    "--index-url",
+                    torch_index,
+                    *torch_packages,
+                ]
+            )
+            packages = [item for item in packages if item not in torch_packages]
+        run([uv, "pip", "install", "--python", str(python), *packages])
         run([uv, "pip", "install", "--python", str(python), "--no-deps", "-e", str(checkout)])
     if args.build_web:
         run(["npm", "--prefix", "web", "ci"])

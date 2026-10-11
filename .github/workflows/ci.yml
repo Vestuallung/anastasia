@@ -20,6 +20,13 @@ jobs:
       - run: npm --prefix web run build
       - run: uv run ruff check src scripts tests
       - run: uv run pytest
+      - name: Unix one-command installer plan
+        if: runner.os != 'Windows'
+        run: sh install.sh --plan --main-only
+      - name: Windows one-command installer plan
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Plan -MainOnly
       - run: uv build
       - name: Windows setup plan
         if: runner.os == 'Windows'
