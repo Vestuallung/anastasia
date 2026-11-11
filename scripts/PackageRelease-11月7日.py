@@ -58,7 +58,9 @@ def included(path: Path) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
-    parser.add_argument("--archive-only", action="store_true", help="Write the ZIP without staging a directory.")
+    parser.add_argument(
+        "--archive-only", action="store_true", help="Write the ZIP without staging a directory."
+    )
     args = parser.parse_args()
     destination = args.directory.resolve()
     archive = destination.with_suffix(".zip")

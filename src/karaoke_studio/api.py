@@ -191,7 +191,9 @@ def create_app(project_dir: Path, *, token: str | None = None, workspace=None) -
         if video_bitrate_mbps is not None and 0 < video_bitrate_mbps < 0.1:
             raise HTTPException(422, "视频码率至少为 0.1 Mbps")
         if workspace is not None:
-            return start_workspace_job("render", fresh, upload=upload, video_bitrate_mbps=video_bitrate_mbps)
+            return start_workspace_job(
+                "render", fresh, upload=upload, video_bitrate_mbps=video_bitrate_mbps
+            )
         try:
             save_settings(project_dir, {})
             job_path = project_dir / "render-job.json"
@@ -227,11 +229,16 @@ def create_app(project_dir: Path, *, token: str | None = None, workspace=None) -
         return {"job_id": job.id}
 
     def start_workspace_job(
-        kind: str, fresh: bool, allow_download: bool = False, upload: bool = False,
+        kind: str,
+        fresh: bool,
+        allow_download: bool = False,
+        upload: bool = False,
         video_bitrate_mbps: float | None = None,
     ) -> dict:
         try:
-            state = workspace.start_editor(project_dir, kind, fresh, allow_download, upload, video_bitrate_mbps)
+            state = workspace.start_editor(
+                project_dir, kind, fresh, allow_download, upload, video_bitrate_mbps
+            )
             return {"job_id": state["id"]}
         except (ValueError, OSError) as exc:
             raise HTTPException(409, str(exc)) from exc

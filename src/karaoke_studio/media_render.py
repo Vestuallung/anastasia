@@ -290,24 +290,42 @@ def compress_upload(source: Path, output: Path, max_mb: int = 500) -> RenderedFi
             audio = next((s for s in info["streams"] if s["codec_type"] == "audio"), None)
             audio_rate = str(audio.get("bit_rate", "")) if audio else "0"
             audio_bps = int(audio_rate) if audio_rate.isdigit() else 320_000
-            bitrate = int(limit * 8 * .9 / duration) - audio_bps
+            bitrate = int(limit * 8 * 0.9 / duration) - audio_bps
             codec = "h264_videotoolbox" if sys.platform == "darwin" else "libx264"
             for _ in range(3):
                 if bitrate < 100_000:
                     raise MediaRenderError(f"{max_mb} MB 上限不足以容纳当前音轨和视频")
-                base = [str(FFMPEG), "-y", "-v", "error", "-i", str(source), "-map", "0:v:0",
-                        "-map", "0:a:0?", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart"]
+                base = [
+                    str(FFMPEG),
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    str(source),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0?",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "copy",
+                    "-movflags",
+                    "+faststart",
+                ]
                 if codec == "h264_videotoolbox":
                     try:
                         _run_ffmpeg([*base, "-c:v", codec, "-b:v", str(bitrate)], scratch)
                     except MediaRenderError:
                         codec = "libx264"
                 if codec == "libx264":
-                    _run_ffmpeg([*base, "-c:v", codec, "-preset", "veryfast", "-b:v", str(bitrate)], scratch)
+                    _run_ffmpeg(
+                        [*base, "-c:v", codec, "-preset", "veryfast", "-b:v", str(bitrate)], scratch
+                    )
                 size = scratch.stat().st_size
                 if size <= limit:
                     break
-                bitrate = int(bitrate * limit / size * .85)
+                bitrate = int(bitrate * limit / size * 0.85)
             else:
                 raise MediaRenderError(f"上传版未达到 {max_mb} MB 上限")
         if not 0 < scratch.stat().st_size <= limit:
@@ -483,11 +501,30 @@ def _videotoolbox_available(canvas: Canvas, pixel_format: str, bitrate: str) -> 
         return False
     try:
         result = subprocess.run(
-            [str(FFMPEG), "-v", "error", "-f", "lavfi", "-i",
-             f"color=size={canvas.width}x{canvas.height}:rate=24", "-frames:v", "1",
-             "-c:v", "h264_videotoolbox", "-b:v", bitrate, "-pix_fmt", pixel_format,
-             "-f", "null", "-"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=False,
+            [
+                str(FFMPEG),
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=size={canvas.width}x{canvas.height}:rate=24",
+                "-frames:v",
+                "1",
+                "-c:v",
+                "h264_videotoolbox",
+                "-b:v",
+                bitrate,
+                "-pix_fmt",
+                pixel_format,
+                "-f",
+                "null",
+                "-",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -497,7 +534,14 @@ def _videotoolbox_available(canvas: Canvas, pixel_format: str, bitrate: str) -> 
 def _encode(video_bitrate_mbps: float | None = None, canvas: Canvas | None = None) -> list[str]:
     encoder = section("encoder")
     if video_bitrate_mbps is None:
-        video = ["-c:v", encoder["video_codec"], "-preset", encoder["preset"], "-crf", str(encoder["crf"])]
+        video = [
+            "-c:v",
+            encoder["video_codec"],
+            "-preset",
+            encoder["preset"],
+            "-crf",
+            str(encoder["crf"]),
+        ]
     else:
         if not 0.1 <= video_bitrate_mbps <= 1000:
             raise MediaRenderError("视频码率必须在 0.1 到 1000 Mbps 之间")
@@ -558,8 +602,12 @@ def render_outputs(
     else:
         _stream(on_vocal_audio, "audio")
     duration = trim_end - trim_start
-    canvas = None if video_bitrate_mbps is None else resolve_output_canvas(
-        video, frame_mode=frame_mode, target_width=target_width, target_height=target_height
+    canvas = (
+        None
+        if video_bitrate_mbps is None
+        else resolve_output_canvas(
+            video, frame_mode=frame_mode, target_width=target_width, target_height=target_height
+        )
     )
     encoding = _encode(video_bitrate_mbps, canvas)
     match: AudioOpeningMatch | None = None

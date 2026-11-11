@@ -98,8 +98,12 @@ def compress_command(
     except (ValueError, OSError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
-    typer.echo(json.dumps({"path": str(result.path.resolve()), "bytes": result.path.stat().st_size},
-                          ensure_ascii=False))
+    typer.echo(
+        json.dumps(
+            {"path": str(result.path.resolve()), "bytes": result.path.stat().st_size},
+            ensure_ascii=False,
+        )
+    )
 
 
 @app.command("render-job")
@@ -179,7 +183,9 @@ def specialize_command(
     blackout_bottom: float | None = typer.Option(None, "--blackout-bottom", min=0.000001, max=1),
     blackout_y: float | None = typer.Option(None, "--blackout-y", min=0, max=1079.999999),
     segment_seconds: float = typer.Option(30, "--segment-seconds", min=0),
-    video_bitrate: float | None = typer.Option(None, "--video-bitrate", min=0.1, max=1000, help="目标视频码率（Mbps）"),
+    video_bitrate: float | None = typer.Option(
+        None, "--video-bitrate", min=0.1, max=1000, help="目标视频码率（Mbps）"
+    ),
     countdown: bool = typer.Option(
         False, "--countdown/--no-countdown", help="段落首句开唱前3秒实心圆点倒数"
     ),
@@ -412,7 +418,9 @@ def produce(
     blackout_bottom: float | None = typer.Option(None, "--blackout-bottom", min=0.000001, max=1),
     blackout_y: float | None = typer.Option(None, "--blackout-y", min=0, max=1079.999999),
     segment_seconds: float = typer.Option(30, "--segment-seconds", min=0),
-    video_bitrate: float | None = typer.Option(None, "--video-bitrate", min=0.1, max=1000, help="目标视频码率（Mbps）"),
+    video_bitrate: float | None = typer.Option(
+        None, "--video-bitrate", min=0.1, max=1000, help="目标视频码率（Mbps）"
+    ),
     countdown: bool = typer.Option(
         False, "--countdown/--no-countdown", help="段落首句开唱前3秒实心圆点倒数"
     ),
@@ -519,7 +527,9 @@ def resume_production(
     blackout_y: float | None = typer.Option(None, "--blackout-y", min=0, max=1079.999999),
     no_blackout: bool = typer.Option(False, "--no-blackout"),
     segment_seconds: float | None = typer.Option(None, "--segment-seconds", min=0),
-    video_bitrate: float | None = typer.Option(None, "--video-bitrate", min=0, max=1000, help="目标视频码率（Mbps），0 恢复默认画质"),
+    video_bitrate: float | None = typer.Option(
+        None, "--video-bitrate", min=0, max=1000, help="目标视频码率（Mbps），0 恢复默认画质"
+    ),
     countdown: bool | None = typer.Option(None, "--countdown/--no-countdown"),
     katakana_ruby: bool | None = typer.Option(None, "--katakana-ruby/--no-katakana-ruby"),
     only: list[str] = typer.Option([], "--only"),

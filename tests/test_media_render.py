@@ -11,7 +11,9 @@ from karaoke_studio.media_render import MediaRenderError, resolve_output_canvas
 def test_manual_video_bitrate_uses_hardware_or_software_without_crf(monkeypatch):
     canvas = media_render.Canvas(3840, 2160)
     for available, expected_codec in [(True, "h264_videotoolbox"), (False, "libx264")]:
-        monkeypatch.setattr(media_render, "_videotoolbox_available", lambda *args: available)
+        monkeypatch.setattr(
+            media_render, "_videotoolbox_available", lambda *args, available=available: available
+        )
         options = media_render._encode(10.5, canvas)
         assert options[options.index("-c:v") + 1] == expected_codec
         assert options[options.index("-b:v") + 1] == "10500000"
@@ -23,9 +25,14 @@ def test_upload_retries_at_lower_bitrate_and_keeps_source(tmp_path, monkeypatch)
     source, output = tmp_path / "source.mp4", tmp_path / "upload.mp4"
     source.write_bytes(b"s" * 1_500_000)
     monkeypatch.setattr(media_render.sys, "platform", "linux")
-    monkeypatch.setattr(media_render, "_probe", lambda _: {
-        "format": {"duration": "3"}, "streams": [{"codec_type": "audio", "bit_rate": "320000"}],
-    })
+    monkeypatch.setattr(
+        media_render,
+        "_probe",
+        lambda _: {
+            "format": {"duration": "3"},
+            "streams": [{"codec_type": "audio", "bit_rate": "320000"}],
+        },
+    )
     bitrates = []
 
     def encode(command, scratch):

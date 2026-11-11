@@ -152,7 +152,9 @@ def test_macos_uses_libass_build_outside_path(monkeypatch, tmp_path: Path) -> No
 def test_windows_replaces_ffmpeg_and_ffprobe_as_a_pair(monkeypatch, tmp_path: Path) -> None:
     import karaoke_studio.config as config
 
-    spec = importlib.util.spec_from_file_location("bootstrap_windows", ROOT / "scripts/bootstrap.py")
+    spec = importlib.util.spec_from_file_location(
+        "bootstrap_windows", ROOT / "scripts/bootstrap.py"
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module.os, "environ", os.environ.copy())

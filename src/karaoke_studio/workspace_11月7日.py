@@ -224,15 +224,26 @@ class Workspace:
         )
 
     def start_editor(
-        self, root: Path, mode: str, fresh: bool = True, allow_download: bool = False,
+        self,
+        root: Path,
+        mode: str,
+        fresh: bool = True,
+        allow_download: bool = False,
         upload: bool = False,
         video_bitrate_mbps: float | None = None,
     ) -> dict:
         if mode not in ("align", "render"):
             raise ValueError("未知的编辑任务")
-        return self._start_job(root, mode, fresh, {
-            "allow_download": allow_download, "upload": upload, "video_bitrate_mbps": video_bitrate_mbps,
-        })
+        return self._start_job(
+            root,
+            mode,
+            fresh,
+            {
+                "allow_download": allow_download,
+                "upload": upload,
+                "video_bitrate_mbps": video_bitrate_mbps,
+            },
+        )
 
     def editor_job(self, root: Path, job_id: str | None = None) -> dict | None:
         for value in [self.job(job_id)] if job_id else self.jobs():
