@@ -18,7 +18,22 @@
 
 ---
 
-输入 **视频 + 演唱音频 + 逐行歌词**，制作带注音、连续扫色和团体配色的日文卡拉 OK。命令行完成整套制作，浏览器时间轴用于调整读音与演唱时值。
+视频、逐行歌词和可选的独立演唱音轨，组成一个可编辑的卡拉 OK 项目。新建制作、截取、AI 对齐、逐字打轴和导出都可以在图形界面中完成。
+
+## 第一次制作
+
+1. 解压发行包。在 macOS 双击 `Start-Studio-11月7日.command`，在 Windows 双击 `Start-Studio-11月7日.cmd`，在 Linux 打开终端运行 `sh Start-Studio-11月7日.sh`。首次运行会准备环境并打开项目库。
+2. 点击首页齿轮，在「环境与模型」中检查状态并下载对齐模型。这里也可设置字体、团体配色和自定义模型。
+3. 点击「新建制作」，选择视频和歌词。视频自带演唱音轨时可略过独立音轨。填写起止时间，结束留空表示到视频末尾。
+4. 选「对齐并进入编辑」可逐句预览、拖动正文或读音边界，也可设置倍速、循环和遮黑。点「导出成片」生成所选版本。「直接生成成片」从首页一次完成制作。
+
+新建制作和编辑器都可选择主成片的「视频码率」。选择默认画质、6／8／10.5／15／25／35 Mbps，或输入自定义值。指定码率时，macOS 优先使用 H.264 硬件编码，其余情况使用 H.264 软件编码。实际体积取决于片长和编码结果。命令行可在 `produce`、`specialize` 和 `resume` 使用 `--video-bitrate 10.5`。
+
+需要严格满足 500 MB 上限时，可另外勾选「同时生成上传版（500 MB 以内）」。已有 MP4 可用 `karaoke compress INPUT.mp4 --output UPLOAD.mp4 --max-mb 500` 单独压缩。
+
+歌词按原有行分句。日文可写成 `漢字《かな》`；双语文本用 `日文：…` 和 `中文：…` 交替成对填写，中文按该日文句的时间显示。空行用于划分段落。制作任务会保留进度和结果，可回到项目库查看。「从头重做」使用当前项目设置完整执行，「从断点继续」复用仍有效的阶段和视频分段。
+
+Apple Silicon macOS 可在首次安装后打开同目录的 `KaraokeStudio-11月7日.app`。Windows 如需把环境、模型和项目放到其他盘，在解压目录运行 `Start-Studio-11月7日.cmd -DataDir D:\KaraokeStudio`。
 
 ## 从歌词到成片
 
@@ -28,10 +43,10 @@
 | --- | --- |
 | 歌词解析 | TXT、LRC、ASS；`漢字《かな》` 显式注音；保留原始换行、空格、标点 |
 | 逐音对齐 | 用演唱音频和罗马音计算时值，保存原始对齐记录 |
-| 动态字幕 | 正文与注音连续扫色；默认 96px；实际字体测宽 |
+| 动态字幕 | 正文与注音连续扫色、三点倒数、片假名转平假名注音、96px 正文与实际字体测宽 |
 | 团体配色 | 乃木坂46、日向坂46、櫻坂46、欅坂46、≠ME；自定义名称与颜色 |
-| 视频处理 | 起止截取、独立音轨、等比缩放、居中补黑 |
-| 多版本输出 | 演唱版、伴奏版、日中双语版、纯中文字幕版 |
+| 视频处理 | 起止截取、独立音轨、等比缩放、居中补黑、底部及分时段遮黑 |
+| 多版本输出 | 演唱版、伴奏版、日中双语版 |
 | 时间轴编辑 | 波形预览、逐音拖动、整句移动、读音调整、撤销与重做 |
 | 自动化 | 一条命令制作、阶段复用、正式 JSON 作业、结果与进度输出 |
 
@@ -135,18 +150,17 @@ sh install.sh --data-dir "$HOME/anastasia-data"
 
 ```bash
 ./karaoke-local resume projects/song
-./karaoke-local resume projects/song --color "#00B379" --force-render
+./karaoke-local resume projects/song --color "#00B379" --reuse --force-render
 ./karaoke-local serve projects/song
 ```
 
-Windows 将 `./karaoke-local` 换成 `.\karaoke-local.ps1`。`serve` 打开时间轴编辑器；`resume` 根据输入变化复用步骤。超宽报告会列出所有需要调整断句的行，修订后继续运行。
+Windows 将 `./karaoke-local` 换成 `.\karaoke-local.ps1`。`serve` 打开时间轴编辑器；`resume` 默认完整重跑，`--reuse` 复用已有结果。超宽报告会列出所有需要调整断句的行，修订后继续运行。
 
 | 输出 | 内容 |
 | --- | --- |
 | `on_vocal_karaoke.mp4` | 日文演唱版 |
 | `off_vocal_karaoke.mp4` | 日文伴奏版 |
 | `on_vocal_karaoke_zh.mp4` | 日中双语演唱版 |
-| `on_vocal_zh_only.mp4` | 纯中文字幕演唱版 |
 | `project.karaoke.json` 与 ASS | 可继续编辑的项目与字幕 |
 
 ## 配置、团体与模型
@@ -183,7 +197,7 @@ default_theme = "my_group"
 ./karaoke-local render-job examples/render-job.json
 ```
 
-编辑器使用 FastAPI REST 与 SSE。启动 `serve` 后，访问服务的 `/docs` 查看参数结构；启动地址里的 token 可作为 `X-Karaoke-Token` 请求头。
+图形界面使用 React、TypeScript 和 Canvas 绘制结构化字幕。FastAPI 提供本地接口与 SSE 任务进度；Yohane 和 PyTorch 负责对齐，FFmpeg 与 libass 输出 MP4。项目和作业格式见 [schemas](schemas/)。
 
 | 接口 | 作用 |
 | --- | --- |

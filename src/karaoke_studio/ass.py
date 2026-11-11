@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from .config import section
-from .models import KaraokeProject, LyricLine
+from .models import KaraokeProject, LyricLine, ReadingSource
 from .mora import is_kana, split_mora
 from .timing import effective_boundaries, quantized_k_values
 
@@ -102,11 +102,17 @@ def _render_aligned_token(
         return r"{\k0}" + escape_ass_text(text)
     output: list[str] = []
     cursor = 0
+    group_ids = {line.moras[index].group_id for index in mora_indices}
+    explicit_ruby = any(
+        group.id in group_ids
+        and group.source in (ReadingSource.RUBY, ReadingSource.USER, ReadingSource.AGENT)
+        for group in line.ruby_groups
+    )
     for unit, count in _display_units(text, len(mora_indices)):
         if count <= 0:
             output.append(r"{\k0}" + escape_ass_text(unit))
             continue
-        needs_furigana = not is_kana(unit)
+        needs_furigana = not is_kana(unit) or explicit_ruby
         for offset in range(count):
             mora_index = mora_indices[cursor]
             duration = k_values[mora_index] if mora_index < len(k_values) else 0
@@ -175,7 +181,10 @@ def export_ass(project: KaraokeProject) -> str:
     for line in project.lines:
         start, end, k_values = _line_k_values(project, line)
         text = render_karaoke_text(line, k_values)
-        events.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},K1,,0,0,0,karaoke,{text}")
+        name = "paragraph-start" if line.paragraph_before else ""
+        events.append(
+            f"Dialogue: 0,{ass_time(start)},{ass_time(end)},K1,{name},0,0,0,karaoke,{text}"
+        )
     return (
         ASS_HEADER.format(
             font_family=section("fonts")["japanese_family"],

@@ -14,7 +14,7 @@ import time
 import tomllib
 import urllib.request
 import zipfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -67,6 +67,19 @@ def linux_commands(packages: list[str]) -> list[list[str]]:
     return [prefix + command for command in commands]
 
 
+def supports_ass(executable: str) -> bool:
+    try:
+        filters = subprocess.check_output(
+            [executable, "-hide_banner", "-filters"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return " ass " in filters
+
+
 def save_environment(values: dict[str, str]) -> None:
     runtime = ROOT / ".runtime"
     runtime.mkdir(exist_ok=True)
@@ -93,7 +106,13 @@ def main() -> None:
     parser.add_argument("--platform", choices=["windows", "macos", "linux"])
     args = parser.parse_args()
     system = args.platform or platform_name()
-    data = args.data_dir.expanduser().resolve()
+    requested = args.data_dir.expanduser()
+    windows_data = PureWindowsPath(str(requested))
+    data = (
+        windows_data
+        if args.plan and system == "windows" and windows_data.is_absolute()
+        else requested.resolve()
+    )
     settings = tomllib.loads((ROOT / "installer.toml").read_text(encoding="utf-8"))
     os.environ["KARAOKE_HOME"] = str(ROOT)
     if args.config:
@@ -116,20 +135,16 @@ def main() -> None:
         "TMPDIR": str(data / "temp"),
         "PYTHONUTF8": "1",
     }
-    if (
-        not args.main_only
-        or (
-            data / "align" / ("Scripts/python.exe" if system == "windows" else "bin/python")
-        ).is_file()
-    ):
-        values["KARAOKE_YOHANE_PYTHON"] = str(
-            data / "align" / ("Scripts/python.exe" if system == "windows" else "bin/python")
-        )
+    values["KARAOKE_RUNTIME"] = str(data)
+    values["KARAOKE_YOHANE_PYTHON"] = str(
+        data / "align" / ("Scripts/python.exe" if system == "windows" else "bin/python")
+    )
     if args.config:
         values["KARAOKE_CONFIG"] = str(args.config.resolve())
     os.environ.update(values)
     if system in {"windows", "linux"} and section("runtime")["device"] == "cpu":
-        os.environ["KARAOKE_TORCH_INDEX_URL"] = settings["alignment"]["cpu_index_url"]
+        values["KARAOKE_TORCH_INDEX_URL"] = settings["alignment"]["cpu_index_url"]
+        os.environ.update(values)
 
     def run(command: list[str]) -> None:
         print(shlex.join(map(str, command)), flush=True)
@@ -142,15 +157,8 @@ def main() -> None:
         candidate = tool_path(name) if name in {"ffmpeg", "ffprobe"} else name
         found[name] = shutil.which(candidate) if system == platform_name() else None
     missing = [name for name in needed if not found[name]]
-    if not args.plan and found["ffmpeg"]:
-        filters = subprocess.check_output(
-            [found["ffmpeg"], "-hide_banner", "-filters"],
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if " ass " not in filters and "ffmpeg" not in missing:
-            missing.append("ffmpeg")
+    if not args.plan and found["ffmpeg"] and not supports_ass(found["ffmpeg"]):
+        missing.append("ffmpeg")
     if args.plan:
         print(
             json.dumps(
@@ -178,8 +186,10 @@ def main() -> None:
                     data / "downloads",
                 )
                 os.environ["PATH"] = str(executable.parent) + os.pathsep + os.environ["PATH"]
-        if not args.plan:
-            found = {name: found[name] or shutil.which(name) for name in needed}
+                found[name] = str(executable)
+                if name == "ffmpeg":
+                    probe = executable.with_name("ffprobe.exe")
+                    found["ffprobe"] = str(probe) if probe.is_file() else None
     elif missing and system == "macos":
         brew = shutil.which("brew")
         if not brew:
@@ -221,14 +231,10 @@ def main() -> None:
                 )
         values["KARAOKE_FFMPEG"] = found["ffmpeg"]
         values["KARAOKE_FFPROBE"] = found["ffprobe"]
+        if found.get("git"):
+            values["KARAOKE_GIT"] = found["git"]
         os.environ.update(values)
-        filters = subprocess.check_output(
-            [found["ffmpeg"], "-hide_banner", "-filters"],
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if " ass " not in filters:
+        if not supports_ass(found["ffmpeg"]):
             raise RuntimeError("Select an FFmpeg build with the ASS/libass filter.")
     command = [sys.executable, str(ROOT / "scripts/setup.py"), "--runtime-dir", str(data)]
     if args.main_only:

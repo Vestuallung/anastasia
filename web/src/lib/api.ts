@@ -11,7 +11,13 @@ if (urlToken) {
 
 export const sessionToken = sessionStorage.getItem("karaoke-session-token") ?? "";
 
+function apiPath(path:string):string {
+  const projectPrefix=window.location.pathname.match(/^\/p\/[a-f0-9]{16}(?=\/|$)/)?.[0];
+  return projectPrefix && path.startsWith('/api/') ? projectPrefix+path : path;
+}
+
 export function apiUrl(path: string): string {
+  path=apiPath(path);
   if (!sessionToken) return path;
   return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(sessionToken)}`;
 }
@@ -19,9 +25,14 @@ export function apiUrl(path: string): string {
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (sessionToken) headers.set("X-Karaoke-Token", sessionToken);
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(apiPath(path), { ...init, headers });
   if (!response.ok) {
-    const message = await response.text();
+    let message = await response.text();
+    try {
+      const detail=JSON.parse(message).detail;
+      if(typeof detail==='string') message=detail;
+      else if(Array.isArray(detail)) message=detail.map(item=>item.msg).join('；');
+    } catch {}
     throw new Error(message || `${response.status} ${response.statusText}`);
   }
   const contentType = response.headers.get("content-type") ?? "";
@@ -29,7 +40,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 }
 
 export const getProject = () => apiFetch<ProjectPayload>("/api/project");
-export const getWaveform = () => apiFetch<WaveformPayload>("/api/waveform?points=1800");
+export const getWaveform = (start?:number,end?:number,signal?:AbortSignal) => apiFetch<WaveformPayload>(`/api/waveform?points=1800${start!=null?`&start_ms=${Math.round(start)}&end_ms=${Math.round(end!)}`:""}`,{signal});
 
 export async function saveTiming(
   lineId: string,

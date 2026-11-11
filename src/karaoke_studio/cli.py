@@ -11,9 +11,8 @@ import typer
 from .api import create_app
 from .ass import export_ass
 from .audio_match import AudioOpeningMatchError, match_audio_opening
-from .config import section
 from .derived_ass import DerivedAssError, OverwideError, fmt_ass_time
-from .media_render import MediaRenderError, parse_media_time
+from .media_render import MediaRenderError, compress_upload, parse_media_time
 from .models import utc_now
 from .overrides import apply_overrides, load_overrides
 from .project_io import create_project, load_project, save_project
@@ -52,6 +51,9 @@ def _render_report_payload(report: RenderJobReport) -> dict[str, object]:
         "max_width_px": ass_report.max_width,
         "font_size_px": ass_report.font_size,
         "output_ass": str(ass_report.output),
+        "countdown_cues": ass_report.countdown_cues,
+        "countdown_skipped": ass_report.countdown_skipped,
+        "katakana_ruby_added": ass_report.katakana_ruby_added,
     }
     if report.media is not None:
         payload["outputs"] = {
@@ -60,6 +62,8 @@ def _render_report_payload(report: RenderJobReport) -> dict[str, object]:
                 "ffmpeg_exit_code": result.ffmpeg_exit_code,
                 "reused": result.reused,
                 "elapsed_seconds": result.elapsed_seconds,
+                "segments_total": result.segments_total,
+                "segments_reused": result.segments_reused,
             }
             for name, result in report.media.outputs.items()
         }
@@ -78,16 +82,38 @@ def _render_report_payload(report: RenderJobReport) -> dict[str, object]:
         }
     payload["requested_outputs"] = list(report.requested_outputs)
     payload["timings"] = report.timings
+    payload["effective_parameters"] = report.effective_parameters
     return payload
+
+
+@app.command("compress")
+def compress_command(
+    video: Path,
+    output: Path = typer.Option(..., "--output", "-o"),
+    max_mb: int = typer.Option(500, "--max-mb", min=1),
+) -> None:
+    """Create an upload copy of an existing MP4 within the specified size."""
+    try:
+        result = compress_upload(video, output, max_mb)
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps({"path": str(result.path.resolve()), "bytes": result.path.stat().st_size},
+                          ensure_ascii=False))
 
 
 @app.command("render-job")
 def render_job_command(
     job_file: Path = typer.Argument(..., exists=True, dir_okay=False),
+    fresh: bool = typer.Option(True, "--fresh/--reuse", help="默认覆盖重烧；--reuse 显式恢复分段"),
 ) -> None:
     """Expand one formal JSON job into its automatic ASS and media variants."""
     try:
-        report = run_render_job(load_render_job(job_file))
+        from .render_job import sync_production_request
+
+        job = load_render_job(job_file).model_copy(update={"reuse_outputs": not fresh})
+        request_updated = sync_production_request(job, job_file)
+        report = run_render_job(job)
     except OverwideError as exc:
         payload = {
             "ok": False,
@@ -118,7 +144,9 @@ def render_job_command(
         payload = {"ok": False, "code": "render_job_error", "message": str(exc)}
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2), err=True)
         raise typer.Exit(1) from exc
-    typer.echo(json.dumps(_render_report_payload(report), ensure_ascii=False, indent=2))
+    payload = _render_report_payload(report)
+    payload["production_request_updated"] = request_updated
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 @app.command("specialize")
@@ -126,9 +154,7 @@ def specialize_command(
     source_ass: Path = typer.Argument(..., exists=True, dir_okay=False),
     video: Path = typer.Argument(..., exists=True, dir_okay=False),
     trim_end: str = typer.Option(..., "--trim-end", help="输出片段结束时间"),
-    theme: str = typer.Option(
-        section("production")["default_theme"], "--theme", help="主题：nogizaka46 等"
-    ),
+    theme: str = typer.Option("nogizaka46", "--theme", help="主题：nogizaka46 等"),
     trim_start: str = typer.Option("0", "--trim-start", help="输入视频起始时间"),
     title_text: str = typer.Option("", "--title-text", help="右上角标题；留空则不创建"),
     output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False),
@@ -150,6 +176,17 @@ def specialize_command(
             "on_vocal_karaoke/off_vocal_karaoke/on_vocal_karaoke_zh/on_vocal_zh_only"
         ),
     ),
+    blackout_bottom: float | None = typer.Option(None, "--blackout-bottom", min=0.000001, max=1),
+    blackout_y: float | None = typer.Option(None, "--blackout-y", min=0, max=1079.999999),
+    segment_seconds: float = typer.Option(30, "--segment-seconds", min=0),
+    video_bitrate: float | None = typer.Option(None, "--video-bitrate", min=0.1, max=1000, help="目标视频码率（Mbps）"),
+    countdown: bool = typer.Option(
+        False, "--countdown/--no-countdown", help="段落首句开唱前3秒实心圆点倒数"
+    ),
+    katakana_ruby: bool = typer.Option(
+        False, "--katakana-ruby/--no-katakana-ruby", help="为片假名自动标注平假名"
+    ),
+    fresh: bool = typer.Option(True, "--fresh/--reuse", help="默认覆盖重烧；--reuse 显式复用分段"),
     write_job_only: bool = typer.Option(False, "--write-job-only"),
 ) -> None:
     """用已有 ASS 轨迹直接生成正式作业并渲染，不运行 Yohane。"""
@@ -181,6 +218,15 @@ def specialize_command(
         "trim_end": trim_end,
         "output_dir": ".",
     }
+    if blackout_bottom is not None and blackout_y is not None:
+        raise typer.BadParameter("--blackout-bottom 和 --blackout-y 请选择一种")
+    media["segment_seconds"] = segment_seconds
+    if video_bitrate is not None:
+        media["video_bitrate_mbps"] = video_bitrate
+    if blackout_bottom is not None:
+        media["blackout"] = [{"y": 1080 * (1 - blackout_bottom), "height": 1080 * blackout_bottom}]
+    if blackout_y is not None:
+        media["blackout"] = [{"y": blackout_y, "height": 1080 - blackout_y}]
     if audio is not None:
         media["audio"] = _job_ref(audio, rendered_job.parent)
     if off_vocal is not None:
@@ -197,6 +243,9 @@ def specialize_command(
         "output_ass": _job_ref(derived_ass, rendered_job.parent),
         "theme": theme,
         "title_text": title_text,
+        "countdown": countdown,
+        "katakana_ruby": katakana_ruby,
+        "reuse_outputs": not fresh,
         "audio_end": end - start,
         "media": media,
     }
@@ -346,7 +395,7 @@ def produce(
     lyrics_file: Path = typer.Option(..., "--lyrics-file", exists=True, dir_okay=False),
     audio: Path | None = typer.Option(None, "--audio", exists=True, dir_okay=False),
     project: Path | None = typer.Option(None, "--project", file_okay=False),
-    theme: str = typer.Option(section("production")["default_theme"], "--theme"),
+    theme: str = typer.Option("nogizaka46", "--theme"),
     color: str | None = typer.Option(None, "--color", help="项目主色 #RRGGBB，不修改预设"),
     color_override: list[str] = typer.Option([], "--color-override", help="可重复：字段=#RRGGBB"),
     trim_start: str = typer.Option("0", "--trim-start"),
@@ -355,14 +404,28 @@ def produce(
     off_vocal: Path | None = typer.Option(None, "--off-vocal", exists=True, dir_okay=False),
     translation: Path | None = typer.Option(None, "--translation", exists=True, dir_okay=False),
     only: list[str] = typer.Option([], "--only"),
-    top_y: float = typer.Option(section("layout")["top_y"], "--top-y"),
-    bottom_y: float = typer.Option(section("layout")["bottom_y"], "--bottom-y"),
-    margin_x: float = typer.Option(section("layout")["margin_x"], "--margin-x"),
+    top_y: float = typer.Option(750, "--top-y"),
+    bottom_y: float = typer.Option(950, "--bottom-y"),
+    margin_x: float = typer.Option(110, "--margin-x"),
     canvas_width: int | None = typer.Option(None, "--canvas-width"),
     canvas_height: int | None = typer.Option(None, "--canvas-height"),
-    force_render: bool = typer.Option(False, "--force-render", help="强制重新烧录，保留有效对齐"),
+    blackout_bottom: float | None = typer.Option(None, "--blackout-bottom", min=0.000001, max=1),
+    blackout_y: float | None = typer.Option(None, "--blackout-y", min=0, max=1079.999999),
+    segment_seconds: float = typer.Option(30, "--segment-seconds", min=0),
+    video_bitrate: float | None = typer.Option(None, "--video-bitrate", min=0.1, max=1000, help="目标视频码率（Mbps）"),
+    countdown: bool = typer.Option(
+        False, "--countdown/--no-countdown", help="段落首句开唱前3秒实心圆点倒数"
+    ),
+    katakana_ruby: bool = typer.Option(
+        False, "--katakana-ruby/--no-katakana-ruby", help="为片假名自动标注平假名"
+    ),
+    fresh: bool = typer.Option(True, "--fresh/--reuse", help="默认从头重跑；--reuse 显式断点恢复"),
+    force_render: bool = typer.Option(False, "--force-render", help="复用上游时仍强制重烧成片"),
+    prepare_only: bool = typer.Option(
+        False, "--prepare-only", help="准备和对齐后进入编辑，保留导出配置"
+    ),
 ) -> None:
-    """一条命令完成歌词对齐、模板展开与成片；同一项目自动复用有效阶段。"""
+    """完成歌词对齐与成片，默认完全重跑；--reuse 显式复用。"""
     colors = {"sung": color} if color is not None else {}
     try:
         for item in color_override:
@@ -388,6 +451,14 @@ def produce(
             target_width=canvas_width,
             target_height=canvas_height,
             force_render=force_render,
+            blackout_bottom=blackout_bottom,
+            blackout_y=blackout_y,
+            segment_seconds=segment_seconds,
+            video_bitrate_mbps=video_bitrate,
+            countdown=countdown,
+            katakana_ruby=katakana_ruby,
+            fresh=fresh,
+            prepare_only=prepare_only,
         )
     except OverwideError as exc:
         typer.echo(
@@ -426,7 +497,10 @@ def produce(
         raise typer.Exit(1) from exc
     payload = _render_report_payload(result)
     payload.update(
-        project=str(root), stages=timing["stages"], elapsed_seconds=timing["elapsed_seconds"]
+        project=str(root),
+        stages=timing["stages"],
+        elapsed_seconds=timing["elapsed_seconds"],
+        execution_mode=timing["execution_mode"],
     )
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
@@ -440,15 +514,42 @@ def resume_production(
     translation: Path | None = typer.Option(None, "--translation", exists=True, dir_okay=False),
     no_off_vocal: bool = typer.Option(False, "--no-off-vocal"),
     no_translation: bool = typer.Option(False, "--no-translation"),
+    title_text: str | None = typer.Option(None, "--title-text"),
+    blackout_bottom: float | None = typer.Option(None, "--blackout-bottom", min=0.000001, max=1),
+    blackout_y: float | None = typer.Option(None, "--blackout-y", min=0, max=1079.999999),
+    no_blackout: bool = typer.Option(False, "--no-blackout"),
+    segment_seconds: float | None = typer.Option(None, "--segment-seconds", min=0),
+    video_bitrate: float | None = typer.Option(None, "--video-bitrate", min=0, max=1000, help="目标视频码率（Mbps），0 恢复默认画质"),
+    countdown: bool | None = typer.Option(None, "--countdown/--no-countdown"),
+    katakana_ruby: bool | None = typer.Option(None, "--katakana-ruby/--no-katakana-ruby"),
+    only: list[str] = typer.Option([], "--only"),
+    fresh: bool = typer.Option(True, "--fresh/--reuse", help="默认从头重跑；--reuse 显式断点恢复"),
     force_render: bool = typer.Option(False, "--force-render"),
 ) -> None:
-    """沿用该项目上次 produce 参数，重新读取原歌词，自动复用有效阶段。"""
+    """沿用项目参数，默认完全重跑；--reuse 显式从断点继续。"""
     try:
         request_path = project / ".karaoke-work" / "production-request.json"
         if not request_path.is_file():
             raise ValueError("项目尚无 produce 记录；首次用 produce --project 指定此目录")
         request = json.loads(request_path.read_text(encoding="utf-8"))
         request["project_dir"] = str(project.resolve())
+        if sum((blackout_bottom is not None, blackout_y is not None, no_blackout)) > 1:
+            raise ValueError("遮黑选项请选择一种")
+        if title_text is not None:
+            request["title_text"] = title_text
+        if countdown is not None:
+            request["countdown"] = countdown
+        if katakana_ruby is not None:
+            request["katakana_ruby"] = katakana_ruby
+        if segment_seconds is not None:
+            request["segment_seconds"] = segment_seconds
+        if video_bitrate is not None:
+            request["video_bitrate_mbps"] = video_bitrate or None
+        if only:
+            request["outputs"] = only
+        if no_blackout or blackout_bottom is not None or blackout_y is not None:
+            request["blackout_bottom"], request["blackout_y"] = blackout_bottom, blackout_y
+            request.get("render_overrides", {}).get("media", {}).pop("blackout", None)
         if color is not None:
             request.setdefault("colors", {})["sung"] = color
         if theme is not None:
@@ -466,7 +567,7 @@ def resume_production(
         for key in ("video", "lyrics", "audio", "project_dir", "off_vocal", "translation"):
             if request.get(key) is not None:
                 request[key] = Path(request[key])
-        root, result, timing = produce_project(**request, force_render=force_render)
+        root, result, timing = produce_project(**request, force_render=force_render, fresh=fresh)
     except OverwideError as exc:
         typer.echo(
             json.dumps(
@@ -504,7 +605,10 @@ def resume_production(
         raise typer.Exit(1) from exc
     payload = _render_report_payload(result)
     payload.update(
-        project=str(root), stages=timing["stages"], elapsed_seconds=timing["elapsed_seconds"]
+        project=str(root),
+        stages=timing["stages"],
+        elapsed_seconds=timing["elapsed_seconds"],
+        execution_mode=timing["execution_mode"],
     )
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
@@ -523,6 +627,7 @@ def align(
         False, help="Accept CC-BY-NC-SA-4.0 for the default model"
     ),
     yohane_python: Path | None = typer.Option(None, exists=True, dir_okay=False),
+    fresh: bool = typer.Option(True, "--fresh/--reuse"),
 ) -> None:
     data = load_project(project)
     if accept_model_license:
@@ -533,6 +638,7 @@ def align(
         project,
         allow_download=allow_download,
         yohane_python=yohane_python,
+        force=fresh,
     )
     typer.echo(f"aligned {len(result.lines)} lines ({'cache' if cache_hit else 'yohane'})")
 
@@ -610,6 +716,51 @@ def serve(
 
     typer.echo(f"Karaoke Studio: http://127.0.0.1:{port}/")
     uvicorn.run(create_app(project.resolve()), host=host, port=port, log_level="info")
+
+
+@app.command("desktop")
+def desktop(
+    workspace: Path | None = typer.Option(None, "--workspace"),
+    port: int = typer.Option(8765, "--port", min=0, max=65535),
+    open_browser: bool = typer.Option(False, "--open", help="启动后打开浏览器"),
+) -> None:
+    """Open the project library and graphical production workflow."""
+    import socket
+    import threading
+    import time
+    import webbrowser
+
+    import uvicorn
+
+    from .workspace_11月7日 import create_workspace_app
+
+    runtime = os.environ.get("KARAOKE_RUNTIME")
+    if workspace is None:
+        workspace = (
+            Path(runtime) / "projects"
+            if runtime
+            else Path.home() / "Documents" / "Karaoke Studio Projects"
+        )
+    server = uvicorn.Server(
+        uvicorn.Config(create_workspace_app(workspace.resolve()), log_level="warning")
+    )
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", port))
+        url = f"http://127.0.0.1:{listener.getsockname()[1]}/"
+        typer.echo(f"Karaoke Studio: {url}")
+
+        def show():
+            for _ in range(100):
+                if server.started:
+                    webbrowser.open(url)
+                    return
+                if server.should_exit:
+                    return
+                time.sleep(0.1)
+
+        if open_browser:
+            threading.Thread(target=show, daemon=True).start()
+        server.run(sockets=[listener])
 
 
 if __name__ == "__main__":

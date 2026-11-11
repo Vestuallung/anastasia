@@ -21,18 +21,21 @@ const project = {
 };
 
 test("editor exposes local project, reading and mora timeline", async ({ page }) => {
+  const errors: string[] = [];
+  let assPreviewRequests = 0;
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("request", request => { if (request.url().includes("preview.ass")) assPreviewRequests++; });
+  await page.route("**/api/workspace", route => route.fulfill({json:{mode:'project'}}));
   await page.route("**/api/project", (route) => route.fulfill({ json: project }));
-  await page.route("**/api/appearance", (route) => route.fulfill({ json: { device: "cpu", model_url: "https://example.org/model", japanese_family: "Noto Sans CJK JP", chinese_family: "Noto Sans CJK JP" } }));
   await page.route("**/api/waveform**", (route) => route.fulfill({ json: { peaks: [0.2, 0.8, 0.4, 0.7], duration_ms: 5000 } }));
-  await page.route("**/api/preview.ass**", (route) => route.fulfill({ body: "[Script Info]\n", contentType: "text/plain" }));
   await page.route("**/api/audio**", (route) => route.fulfill({ status: 204 }));
   await page.goto("/?token=e2e-token");
 
   await expect(page.getByText("Karaoke Studio E2E", { exact: true })).toBeVisible();
-  await expect(page.getByText("歌词内假名标注")).toBeVisible();
-  await expect(page.getByLabel(/边界 2，1250 毫秒/)).toBeVisible();
-  await expect(page.getByText("本地制作流程")).toBeVisible();
-  await expect(page.locator(".ruby-subtitle rt")).toHaveText("ひと");
+  await expect(page.getByLabel("假名读音")).toHaveValue("ひと");
+  await expect(page.getByLabel(/边界 2，1250 毫秒/).first()).toBeVisible();
+  await expect(page.getByLabel("结构化字幕画布")).toBeVisible();
+  await expect(page.getByRole("button", {name:"导出成片"})).toBeEnabled();
 
   await page.getByLabel("播放速度").selectOption("1.5");
   await expect(page.getByLabel("播放速度")).toHaveValue("1.5");
@@ -41,7 +44,7 @@ test("editor exposes local project, reading and mora timeline", async ({ page })
     const body = route.request().postDataJSON();
     await route.fulfill({ json: { ...project, effective_boundaries: { "line-e2e": body.boundaries_ms } } });
   });
-  const boundary = page.getByLabel(/边界 2，1250 毫秒/);
+  const boundary = page.getByLabel(/边界 2，1250 毫秒/).first();
   const box = await boundary.boundingBox();
   if (!box) throw new Error("timing boundary is not visible");
   const timingRequest = page.waitForRequest("**/api/lines/line-e2e/timing");
@@ -55,4 +58,8 @@ test("editor exposes local project, reading and mora timeline", async ({ page })
   expect(body.boundaries_ms[0]).toBe(1000);
   expect(body.boundaries_ms[1]).toBeGreaterThan(1250);
   expect(body.boundaries_ms[2]).toBe(1500);
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(() => document.body.scrollWidth)).toBe(390);
+  expect(assPreviewRequests).toBe(0);
+  expect(errors).toEqual([]);
 });

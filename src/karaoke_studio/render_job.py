@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -20,7 +20,13 @@ from .derived_ass import (
     generate_translation_variants,
     parse_source_play_res,
 )
-from .media_render import MediaRenderReport, parse_media_time, render_outputs, resolve_output_canvas
+from .media_render import (
+    MediaRenderReport,
+    parse_media_time,
+    render_outputs,
+    resolve_output_canvas,
+    write_record,
+)
 from .themes import resolve_theme
 
 OutputName = Literal[
@@ -44,6 +50,24 @@ class FrameSettings(BaseModel):
         return self
 
 
+class BlackoutRegion(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    x: float = Field(default=0, ge=0, lt=1920)
+    y: float = Field(default=0, ge=0, lt=1080)
+    width: float = Field(default=1920, gt=0, le=1920)
+    height: float = Field(default=1080, gt=0, le=1080)
+    start: float = Field(default=0, ge=0)
+    end: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_region(self) -> BlackoutRegion:
+        if self.x + self.width > 1920 + 1e-7 or self.y + self.height > 1080 + 1e-7:
+            raise ValueError("遮黑矩形超出1920×1080逻辑画布")
+        if self.end is not None and self.end <= self.start:
+            raise ValueError("遮黑结束时间必须晚于开始时间")
+        return self
+
+
 class MediaSettings(BaseModel):
     """Media inputs. Old mode/audio/output fields remain accepted for job-file compatibility."""
 
@@ -53,7 +77,7 @@ class MediaSettings(BaseModel):
     audio: Path | None = None
     external_audio: Path | None = None
     match_reference_audio: Path | None = None
-    trim_start: str | float = 0
+    trim_start: str | float = 0.0
     trim_end: str | float
     output_dir: Path | None = None
     on_vocal_output: Path | None = None
@@ -63,6 +87,9 @@ class MediaSettings(BaseModel):
     prefer_early_seconds: float | None = Field(default=None, gt=8)
     minimum_correlation: float = Field(default=0.60, ge=-1, le=1)
     minimum_margin: float = Field(default=0.03, ge=0, le=2)
+    blackout: list[BlackoutRegion] = Field(default_factory=list)
+    segment_seconds: float = Field(default=30, ge=0, allow_inf_nan=False)
+    video_bitrate_mbps: float | None = Field(default=None, ge=0.1, le=1000, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def normalize_legacy(self) -> MediaSettings:
@@ -94,7 +121,9 @@ class TranslationSettings(BaseModel):
     file: Path
     combined_ass: Path | None = None
     zh_only_ass: Path | None = None
-    position: Literal["bottom_left", "bottom_center", "bottom_right", "custom"] = "bottom_left"
+    position: Literal["top_left", "bottom_left", "bottom_center", "bottom_right", "custom"] = (
+        "top_left"
+    )
     alignment: int | None = None
     x: float | None = None
     y: float | None = None
@@ -109,10 +138,12 @@ class RenderJob(BaseModel):
     output_ass: Path
     theme: str = Field(default_factory=lambda: section("production")["default_theme"])
     colors: dict[str, str] = Field(default_factory=dict)
-    reuse_outputs: bool = True
+    reuse_outputs: bool = False
     title_text: str = ""
     audio_end: float = Field(gt=0)
     subtitle_offset: float = 0.0
+    countdown: bool = True
+    katakana_ruby: bool = True
     translation: TranslationSettings | None = None
     media: MediaSettings | None = None
     outputs: list[OutputName] | None = None
@@ -128,6 +159,14 @@ class RenderJob(BaseModel):
 
 def _absolute(base: Path, value: Path | None) -> Path | None:
     return None if value is None else value if value.is_absolute() else (base / value).resolve()
+
+
+def with_video_bitrate(job: RenderJob, value: float | None) -> RenderJob:
+    if value is None or job.media is None:
+        return job
+    media = job.media.model_dump()
+    media["video_bitrate_mbps"] = value or None
+    return job.model_copy(update={"media": MediaSettings.model_validate(media)})
 
 
 def load_render_job(path: Path) -> RenderJob:
@@ -163,6 +202,65 @@ def load_render_job(path: Path) -> RenderJob:
     return job.model_copy(update=updates)
 
 
+def sync_production_request(job: RenderJob, job_file: Path) -> bool:
+    """Persist a project's downstream edits so resume sees the same settings."""
+    from .service import _production_lock
+
+    root = job_file.resolve().parent
+    request_file = root / ".karaoke-work" / "production-request.json"
+    if not request_file.is_file() or job.media is None:
+        return False
+    with _production_lock(request_file.with_name("production.lock")):
+        request = json.loads(request_file.read_text(encoding="utf-8"))
+        request.update(
+            theme=job.theme,
+            colors=job.colors,
+            title_text=job.title_text,
+            countdown=job.countdown,
+            katakana_ruby=job.katakana_ruby,
+            outputs=job.outputs,
+            video=str(job.media.video),
+            audio=str(job.media.audio) if job.media.audio else None,
+            off_vocal=str(job.media.external_audio) if job.media.external_audio else None,
+            translation=str(job.translation.file) if job.translation else None,
+            trim_start=str(job.media.trim_start),
+            trim_end=str(job.media.trim_end),
+            top_y=job.layout.top_y,
+            bottom_y=job.layout.bottom_y,
+            margin_x=job.layout.margin_x,
+            segment_seconds=job.media.segment_seconds,
+            video_bitrate_mbps=job.media.video_bitrate_mbps,
+            blackout_bottom=None,
+            blackout_y=None,
+            target_width=job.media.frame.target_width if job.media.frame.mode == "pad" else None,
+            target_height=job.media.frame.target_height if job.media.frame.mode == "pad" else None,
+        )
+        media_extra = job.media.model_dump(
+            mode="json",
+            exclude={
+                "video",
+                "audio",
+                "external_audio",
+                "trim_start",
+                "trim_end",
+                "frame",
+                "segment_seconds",
+                "video_bitrate_mbps",
+            },
+        )
+        request["render_overrides"] = {
+            "subtitle_offset": job.subtitle_offset,
+            "layout": job.layout.model_dump(exclude={"top_y", "bottom_y", "margin_x"}),
+            "media": media_extra,
+        }
+        if job.translation is not None:
+            request["render_overrides"]["translation"] = job.translation.model_dump(
+                mode="json", exclude={"file"}
+            )
+        write_record(request_file, request)
+    return True
+
+
 @dataclass(frozen=True)
 class RenderJobReport:
     ass: DerivedAssReport
@@ -170,6 +268,7 @@ class RenderJobReport:
     media: MediaRenderReport | None
     requested_outputs: tuple[OutputName, ...]
     timings: dict[str, float] = field(default_factory=dict)
+    effective_parameters: dict = field(default_factory=dict)
 
 
 def _canvas(job: RenderJob) -> Canvas:
@@ -224,7 +323,6 @@ def run_render_job(job: RenderJob) -> RenderJobReport:
                 "on_vocal_karaoke",
                 "off_vocal_karaoke",
                 "on_vocal_karaoke_zh",
-                "on_vocal_zh_only",
             )
             if name in available
         )
@@ -248,6 +346,8 @@ def run_render_job(job: RenderJob) -> RenderJobReport:
             job.layout.bottom_y,
         ),
         subtitle_offset=job.subtitle_offset,
+        countdown=job.countdown,
+        katakana_ruby=job.katakana_ruby,
     )
     timings["subtitle_expansion_seconds"] = round(time.perf_counter() - begun, 3)
     begun = time.perf_counter()
@@ -314,6 +414,22 @@ def run_render_job(job: RenderJob) -> RenderJobReport:
             minimum_correlation=job.media.minimum_correlation,
             minimum_margin=job.media.minimum_margin,
             reuse_outputs=job.reuse_outputs,
+            blackout=[region.model_dump() for region in job.media.blackout],
+            segment_seconds=job.media.segment_seconds,
+            video_bitrate_mbps=job.media.video_bitrate_mbps,
         )
     timings["media_seconds"] = round(time.perf_counter() - begun, 3)
-    return RenderJobReport(ass_report, translation_report, media_report, requested, timings)
+    from .derived_ass import FONT_NAME, MAIN_FONT, ZH_FONT_NAME
+
+    effective = job.model_dump(mode="json")
+    effective["resolved_style"] = {
+        "theme": asdict(theme),
+        "japanese_font": FONT_NAME,
+        "chinese_font": ZH_FONT_NAME,
+        "font_size_px": MAIN_FONT,
+        "chinese_font_size_px": section("appearance")["chinese_size"],
+        "chinese_outline_px": section("appearance")["chinese_outline"],
+    }
+    return RenderJobReport(
+        ass_report, translation_report, media_report, requested, timings, effective
+    )

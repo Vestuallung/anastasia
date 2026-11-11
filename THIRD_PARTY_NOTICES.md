@@ -16,7 +16,7 @@ The bundled Noto Sans JP variable font and Noto Sans CJK JP regular font origina
 
 ## Browser editor
 
-The editor uses React, Vite, Lucide React and JASSUB. JASSUB includes libass and associated WebAssembly components under their respective licenses. The supplied license text is `src/karaoke_studio/assets/licenses/JASSUB-LICENSE.txt`; upstream source is [ThaUnknown/jassub](https://github.com/ThaUnknown/jassub). Frontend versions are recorded in `web/package-lock.json`.
+The editor uses React, TypeScript, Vite and Lucide React. Frontend versions are recorded in `web/package-lock.json`.
 
 ## Python dependencies
 

@@ -1,356 +1,157 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  BadgeCheck,
-  ChevronLeft,
-  ChevronRight,
-  CircleStop,
-  CloudOff,
-  Download,
-  FileCheck2,
-  Pause,
-  Play,
-  Redo2,
-  RefreshCw,
-  Sparkles,
-  TriangleAlert,
-  Undo2,
-} from "lucide-react";
-import { AssPreview } from "./components/AssPreview";
-import { ImportPanel } from "./components/ImportPanel";
-import { Inspector } from "./components/Inspector";
-import { Timeline } from "./components/Timeline";
-import { apiFetch, apiUrl, getProject, getWaveform, saveReading, saveTiming } from "./lib/api";
-import type { ProjectPayload, RubyGroup, WaveformPayload } from "./types";
-
-interface TimingHistory {
-  lineId: string;
-  before: number[];
-  after: number[];
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, Download, FolderOpen, HelpCircle, Pause, Play, Redo2, RefreshCw, Settings2, Undo2, X } from 'lucide-react';
+import { ProjectPreview } from './components/ProjectPreview-11月7日';
+import { BitrateInput, validVideoBitrate } from './components/BitrateInput-11月11日';
+import { Timeline } from './components/Timeline';
+import { Inspector } from './components/Inspector';
+import { SettingsPanel } from './components/SettingsPanel-11月7日';
+import { defaultPreferences } from './lib/preferences-11月7日';
+import type { EditorPreferences, StyleSettings } from './lib/preferences-11月7日';
+import { ImportPanel } from './components/ImportPanel';
+import { apiFetch, apiUrl, getProject, getWaveform, saveTiming } from './lib/api';
+import type { EditorScene, ProjectPayload, RubyGroup, WaveformPayload } from './types';
+interface History {lineId:string;before:number[];after:number[]}
+type JobKind = 'align' | 'render';
+interface EditorJob {
+  id:string;
+  mode:JobKind;
+  upload?:boolean;
+  video_bitrate_mbps?:number|null;
+  status:string;
+  message:string;
+  files?:Record<string,string>;
+  details?:{overwide?:Array<{index:number;text:string;width_px:number}>};
 }
+const finished = (status:string) => ['completed','failed','cancelled','interrupted'].includes(status);
+const outputLabels:Record<string,string> = {
+  on_vocal_karaoke:'日文卡拉 OK',
+  on_vocal_karaoke_zh:'中日双语',
+  off_vocal_karaoke:'伴奏卡拉 OK',
+};
+const fmt=(ms:number)=>`${Math.floor(ms/60000).toString().padStart(2,'0')}:${((ms%60000)/1000).toFixed(2).padStart(5,'0')}`;
+function App(){
+ const [project,setProject]=useState<ProjectPayload|null>(null),[waveform,setWaveform]=useState<WaveformPayload>({peaks:[],duration_ms:0});
+ const [selectedId,setSelectedId]=useState(''),[range,setRange]=useState<[number,number]|null>(null),[currentMs,setCurrentMs]=useState(0),[playing,setPlaying]=useState(false),[loop,setLoop]=useState<'line'|'selection'|'off'>('line'),[speed,setSpeed]=useState(.75);
+ const [previewBounds,setPreviewBounds]=useState<number[]|null>(null),[draftScene,setDraftScene]=useState<EditorScene|null>(null),[text,setText]=useState(''),[saveState,setSaveState]=useState<'saved'|'saving'|'error'>('saved');
+ const [error,setError]=useState(''),[help,setHelp]=useState(false),[settingsOpen,setSettingsOpen]=useState(false),[settingsTab,setSettingsTab]=useState<'editor'|'subtitle'>('editor'),[styleScene,setStyleScene]=useState<EditorScene|null>(null),[taskOpen,setTaskOpen]=useState(false),[taskMessage,setTaskMessage]=useState(''),[taskBusy,setTaskBusy]=useState(false),[files,setFiles]=useState<Record<string,string>>({});
+ const [currentJob,setCurrentJob]=useState<EditorJob|null>(null);
+ const [uploadCopy,setUploadCopy]=useState(false);
+ const [exportBitrate,setExportBitrate]=useState<string|null>(null);
+ const [undoStack,setUndoStack]=useState<History[]>([]),[redoStack,setRedoStack]=useState<History[]>([]),[preferenceVersion,setPreferenceVersion]=useState(0);
+ const mediaRef=useRef<HTMLAudioElement>(null),queue=useRef<Promise<unknown>>(Promise.resolve()),events=useRef<EventSource|null>(null),loadedId=useRef('');
+ const load=useCallback(async()=>{try{const [p,w]=await Promise.all([getProject(),getWaveform().catch(()=>null)]);setProject(p);setWaveform(w??{peaks:[],duration_ms:p.audio.duration_ms||0});setSelectedId(id=>p.lines.some(l=>l.id===id)?id:p.lines[0]?.id||'')}catch(e){setError(String(e))}},[]);
+ const watchJob=useCallback((initial:EditorJob)=>{
+   events.current?.close();
+   setCurrentJob(initial);setTaskMessage(initial.message);setTaskBusy(!finished(initial.status));
+   setFiles(initial.files??{});
+   if(finished(initial.status))return;
+   const source=new EventSource(apiUrl(`/api/jobs/${initial.id}/events`));
+   events.current=source;
+   source.onmessage=event=>{
+     const value={...initial,...JSON.parse(event.data)} as EditorJob;
+     setCurrentJob(value);setTaskMessage(value.message);
+     if(!finished(value.status))return;
+     source.close();setTaskBusy(false);
+     if(value.status==='completed'){
+       void load();
+       if(value.mode==='render')void apiFetch<{files:Record<string,string>}>(`/api/jobs/${initial.id}/result`)
+         .then(result=>setFiles(result.files)).catch(reason=>setTaskMessage(String(reason)));
+     }
+   };
+   source.onerror=()=>setTaskMessage('连接中断，正在尝试重新连接');
+ },[load]);
+ useEffect(()=>{
+   let live=true;
+   void load();
+   if(/^\/p\/[a-f0-9]{16}/.test(window.location.pathname)){
+     void apiFetch<{job:EditorJob|null}>('/api/editor/job').then(({job})=>{if(live&&job)watchJob(job)}).catch(()=>{});
+   }
+   return()=>{live=false;events.current?.close()};
+ },[load,watchJob]);
+ const selected=project?.lines.find(l=>l.id===selectedId),index=project?.lines.findIndex(l=>l.id===selectedId)??-1;
+ const savedBounds=project?.effective_boundaries[selectedId]??[],bounds=previewBounds??savedBounds,scene=styleScene??draftScene??project?.editor;
+ const preferences=project?.editor_preferences??defaultPreferences;
+ const duration=waveform.duration_ms||project?.audio.duration_ms||1;
+ const segment=scene?.lines.find(l=>l.id===selectedId),dirty=text!==(selected?.original??'');
+ useEffect(()=>{if(savedBounds.length<2)return;const controller=new AbortController();void getWaveform(Math.max(0,savedBounds[0]-450),Math.min(duration,savedBounds.at(-1)!+450),controller.signal).then(setWaveform).catch(()=>{});return()=>controller.abort()},[selectedId,savedBounds[0],savedBounds.at(-1),duration]);
+ const a=loop==='selection'&&range?bounds[range[0]]:bounds[0],b=loop==='selection'&&range?bounds[range[1]]:bounds.at(-1);
+ const clock=useRef({a,b,loop,duration,lead:preferences.lead_ms,offset:scene?.audio_offset_ms??0});clock.current={a,b,loop,duration,lead:preferences.lead_ms,offset:scene?.audio_offset_ms??0};
+ useEffect(()=>{setText(selected?.original??'');setDraftScene(null);setPreviewBounds(null);setRange(null)},[selectedId,selected?.original]);
+ const seek=useCallback((ms:number)=>{const m=mediaRef.current;if(m)m.currentTime=Math.max(0,ms+(clock.current.offset||0))/1000;setCurrentMs(Math.max(0,ms))},[]);
+ useEffect(()=>{const m=mediaRef.current;if(!m)return;m.playbackRate=speed;m.preservesPitch=preferences.preserve_pitch},[speed,project?.project_id,preferences.preserve_pitch]);
+ useEffect(()=>{setSpeed(preferences.playback_speed);setLoop(preferences.loop)},[project?.project_id,preferences.playback_speed,preferences.loop]);
+ useEffect(()=>{let frame=0;let last=0;function update(t:number){const m=mediaRef.current;if(m&&t-last>25){const c=clock.current;let value=m.currentTime*1000-c.offset;if(!m.paused&&c.loop!=='off'&&c.a!=null&&c.b!=null&&value>=c.b+100){m.currentTime=Math.max(0,c.a-c.lead+c.offset)/1000;value=c.a-c.lead}setCurrentMs(Math.max(0,value));setPlaying(!m.paused&&!m.ended);last=t}frame=requestAnimationFrame(update)}frame=requestAnimationFrame(update);return()=>cancelAnimationFrame(frame)},[Boolean(project)]);
+ useEffect(()=>{if(!dirty){setDraftScene(null);return}if(!selected)return;const controller=new AbortController();const timer=setTimeout(()=>{void apiFetch<EditorScene>(`/api/lines/${selected.id}/text`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,commit:false}),signal:controller.signal}).then(setDraftScene).catch(()=>{})},180);return()=>{clearTimeout(timer);controller.abort()}},[text,selectedId,dirty]);
+ useEffect(()=>{const initial=project?.effective_boundaries[selectedId]?.[0];if(initial!=null)seek(Math.max(0,initial-preferences.lead_ms))},[selectedId,project?.project_id]);
+ async function select(id:string){if(saveState==='saving'||id===selectedId)return;if(dirty&&!await saveText())return;setSelectedId(id);const start=project?.effective_boundaries[id]?.[0];if(start!=null)seek(Math.max(0,start-preferences.lead_ms))}
+ function toggle(){const m=mediaRef.current;if(!m)return;if(!m.paused){m.pause();setPlaying(false)}else{if(a!=null&&b!=null&&(currentMs<a||currentMs>=b))seek(Math.max(0,a-preferences.lead_ms));void m.play().then(()=>setPlaying(true)).catch(e=>setError(String(e)))}}
+ function enqueue(action:()=>Promise<ProjectPayload>):Promise<boolean>{
+   setSaveState('saving');
+   const next=queue.current.catch(()=>{}).then(async()=>{
+     try{const p=await action();setProject(p);setSaveState('saved');setDraftScene(null);setError('');return true}
+     catch(e){setSaveState('error');setError(e instanceof Error?e.message:String(e));setUndoStack([]);setRedoStack([]);try{setProject(await getProject())}catch{}return false}
+   });queue.current=next;return next;
+ }
+ function commit(before:number[],after:number[],kind:'line_shift'|'boundary'|'line_start'|'line_end',boundaryIndex?:number){if(!selected)return;const id=selected.id;setProject(p=>p?{...p,effective_boundaries:{...p.effective_boundaries,[id]:after}}:p);setUndoStack(s=>[...s,{lineId:id,before,after}]);setRedoStack([]);enqueue(()=>saveTiming(id,after,kind,boundaryIndex))}
+ function history(direction:'undo'|'redo'){if(saveState==='saving')return;const stack=direction==='undo'?undoStack:redoStack,item=stack.at(-1);if(!item)return;const next=direction==='undo'?item.before:item.after;if(direction==='undo'){setUndoStack(s=>s.slice(0,-1));setRedoStack(s=>[...s,item])}else{setRedoStack(s=>s.slice(0,-1));setUndoStack(s=>[...s,item])}enqueue(()=>saveTiming(item.lineId,next,'line_shift'))}
+ async function applySettings(value:EditorPreferences,style:StyleSettings){const success=await enqueue(async()=>{
+   if(Object.keys(style).length)await apiFetch('/api/editor/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(style)});
+   return apiFetch('/api/editor/preferences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+ });if(success){setSpeed(value.playback_speed);setLoop(value.loop);setPreferenceVersion(v=>v+1)}return success}
+ function closeSettings(){setSettingsOpen(false);setStyleScene(null);document.querySelector<HTMLButtonElement>('button[aria-label="设置"]')?.focus()}
+ async function openSettings(tab:'editor'|'subtitle'){
+   if(saveState==='saving')return;if(dirty&&!await saveText())return;
+   mediaRef.current?.pause();setPlaying(false);setSettingsTab(tab);setSettingsOpen(true);
+ }
+ function saveText(value=text):Promise<boolean>{if(!selected)return Promise.resolve(false);const id=selected.id;return enqueue(()=>apiFetch(`/api/lines/${id}/text`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,commit:true})}))}
+ function reading(group:RubyGroup,value:string,_romaji:string){if(selected)saveText(selected.original.slice(0,group.span.start)+group.display+'《'+value+'》'+selected.original.slice(group.span.end))}
+ async function task(
+   kind:JobKind,fresh=true,upload=kind==='render'&&uploadCopy,
+   bitrate=exportBitrate===null?null:Number(exportBitrate),
+ ){
+   setTaskOpen(true);setTaskBusy(true);setFiles({});
+   const message=kind==='render'?'正在导出成片':'正在对齐';
+   setTaskMessage(message);
+   try{
+     const query = new URLSearchParams({fresh:String(fresh)});
+     if(kind==='render'){
+       if(upload)query.set('upload','true');
+       if(bitrate!==null)query.set('video_bitrate_mbps',String(bitrate));
+     }
+     const result=await apiFetch<{job_id:string}>(`/api/jobs/${kind}?${query}`,{method:'POST'});
+     watchJob({id:result.job_id,mode:kind,status:'queued',message,upload,video_bitrate_mbps:bitrate});
+   }catch(e){setTaskMessage(String(e));setTaskBusy(false)}
+ }
+ async function stopTask(){
+   if(!currentJob)return;
+   try{await apiFetch(`/api/jobs/${currentJob.id}/cancel`,{method:'POST'})}
+   catch(e){setTaskMessage(String(e))}
+ }
 
-type SaveState = "saved" | "saving" | "error";
-
-function App() {
-  const [project, setProject] = useState<ProjectPayload | null>(null);
-  const [waveform, setWaveform] = useState<WaveformPayload>({ peaks: [], duration_ms: 0 });
-  const [selectedId, setSelectedId] = useState("");
-  const [currentMs, setCurrentMs] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [loop, setLoop] = useState(true);
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [error, setError] = useState("");
-  const [jobMessage, setJobMessage] = useState("");
-  const [jobId, setJobId] = useState("");
-  const [licenseOpen, setLicenseOpen] = useState(false);
-  const [issuesOpen, setIssuesOpen] = useState(false);
-  const [undoStack, setUndoStack] = useState<TimingHistory[]>([]);
-  const [redoStack, setRedoStack] = useState<TimingHistory[]>([]);
-  const [timingPreview, setTimingPreview] = useState<number[] | null>(null);
-  const mediaRef = useRef<HTMLAudioElement>(null);
-  const [runtime, setRuntime] = useState<{ device?: string; model_url?: string }>({});
-
-  const load = useCallback(async () => {
-    try {
-      const [nextProject, nextWaveform] = await Promise.all([getProject(), getWaveform()]);
-      setProject(nextProject);
-      setWaveform(nextWaveform);
-      setSelectedId((value) => value || nextProject.lines[0]?.id || "");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }, []);
-
-  useEffect(() => { void load(); void apiFetch<{ device: string; model_url: string }>("/api/appearance").then(setRuntime).catch(() => {}); }, [load]);
-
-  const selectedIndex = project?.lines.findIndex((line) => line.id === selectedId) ?? -1;
-  const selectedLine = selectedIndex >= 0 ? project?.lines[selectedIndex] : undefined;
-  const boundaries = project?.effective_boundaries[selectedId] ?? [];
-  const editorBoundaries = timingPreview ?? boundaries;
-  const durationMs = waveform.duration_ms || project?.audio.duration_ms || 1;
-  const lineStart = editorBoundaries[0] ?? 0;
-  const lineEnd = editorBoundaries[editorBoundaries.length - 1] ?? durationMs;
-
-  useEffect(() => {
-    const media = mediaRef.current;
-    if (!media) return;
-    const update = () => {
-      const milliseconds = Math.round(media.currentTime * 1000);
-      setCurrentMs(milliseconds);
-      if (loop && boundaries.length && milliseconds >= lineEnd) {
-        media.currentTime = lineStart / 1000;
-        void media.play();
-      }
-    };
-    const stopped = () => setPlaying(false);
-    media.addEventListener("timeupdate", update);
-    media.addEventListener("ended", stopped);
-    return () => {
-      media.removeEventListener("timeupdate", update);
-      media.removeEventListener("ended", stopped);
-    };
-  }, [boundaries.length, lineEnd, lineStart, loop]);
-
-  useEffect(() => {
-    if (mediaRef.current) mediaRef.current.playbackRate = playbackRate;
-  }, [playbackRate]);
-
-  function selectLine(id: string) {
-    setTimingPreview(null);
-    setSelectedId(id);
-    const start = project?.effective_boundaries[id]?.[0];
-    if (start !== undefined && mediaRef.current) {
-      mediaRef.current.currentTime = start / 1000;
-      setCurrentMs(start);
-    }
-  }
-
-  function stepLine(direction: number) {
-    if (!project?.lines.length) return;
-    const index = Math.min(Math.max(0, selectedIndex + direction), project.lines.length - 1);
-    selectLine(project.lines[index].id);
-  }
-
-  function togglePlayback() {
-    const media = mediaRef.current;
-    if (!media) return;
-    if (media.paused) {
-      if (boundaries.length && (media.currentTime * 1000 < lineStart || media.currentTime * 1000 >= lineEnd)) {
-        media.currentTime = lineStart / 1000;
-      }
-      void media.play();
-      setPlaying(true);
-    } else {
-      media.pause();
-      setPlaying(false);
-    }
-  }
-
-  const applyLocalTiming = useCallback((lineId: string, next: number[]) => {
-    setProject((value) => value ? {
-      ...value,
-      updated_at: new Date().toISOString(),
-      effective_boundaries: { ...value.effective_boundaries, [lineId]: next },
-    } : value);
-  }, []);
-
-  async function commitTiming(
-    before: number[],
-    after: number[],
-    kind: "line_shift" | "boundary" | "line_start" | "line_end",
-    boundaryIndex?: number,
-  ) {
-    if (!selectedLine) return;
-    applyLocalTiming(selectedLine.id, after);
-    setUndoStack((items) => [...items, { lineId: selectedLine.id, before, after }]);
-    setRedoStack([]);
-    setSaveState("saving");
-    try {
-      setProject(await saveTiming(selectedLine.id, after, kind, boundaryIndex));
-      setSaveState("saved");
-    } catch (reason) {
-      applyLocalTiming(selectedLine.id, before);
-      setSaveState("error");
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
-  async function replayHistory(history: TimingHistory, direction: "undo" | "redo") {
-    const next = direction === "undo" ? history.before : history.after;
-    applyLocalTiming(history.lineId, next);
-    setSaveState("saving");
-    try {
-      setProject(await saveTiming(history.lineId, next, "line_shift"));
-      setSaveState("saved");
-    } catch (reason) {
-      setSaveState("error");
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
-  function undo() {
-    const item = undoStack[undoStack.length - 1];
-    if (!item) return;
-    setUndoStack((items) => items.slice(0, -1));
-    setRedoStack((items) => [...items, item]);
-    void replayHistory(item, "undo");
-  }
-
-  function redo() {
-    const item = redoStack[redoStack.length - 1];
-    if (!item) return;
-    setRedoStack((items) => items.slice(0, -1));
-    setUndoStack((items) => [...items, item]);
-    void replayHistory(item, "redo");
-  }
-
-  async function updateReading(group: RubyGroup, reading: string, romaji: string) {
-    if (!selectedLine) return;
-    setSaveState("saving");
-    try {
-      setProject(await saveReading(selectedLine.id, selectedLine.original, group.span, reading, romaji));
-      setSaveState("saved");
-    } catch (reason) {
-      setSaveState("error");
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
-  async function restoreRaw() {
-    if (!selectedLine) return;
-    setSaveState("saving");
-    try {
-      setProject(await apiFetch(`/api/lines/${selectedLine.id}/restore-timing`, { method: "POST" }));
-      setSaveState("saved");
-    } catch (reason) {
-      setSaveState("error");
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
-  async function acceptLicense() {
-    const form = new FormData();
-    form.append("accepted", "true");
-    try {
-      await apiFetch("/api/model/accept-license", { method: "POST", body: form });
-      setLicenseOpen(false);
-      await load();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
-  async function startAlignment(allowDownload = false) {
-    setJobMessage("正在启动整曲对齐……");
-    setError("");
-    try {
-      const result = await apiFetch<{ job_id: string }>(`/api/jobs/align?allow_download=${allowDownload}`, { method: "POST" });
-      setJobId(result.job_id);
-      const events = new EventSource(apiUrl(`/api/jobs/${result.job_id}/events`));
-      events.onmessage = (event) => {
-        const update = JSON.parse(event.data) as { message: string; status: string };
-        setJobMessage(update.message);
-        if (["completed", "failed", "cancelled"].includes(update.status)) {
-          events.close();
-          setJobId("");
-          if (update.status === "completed") void load();
-          if (update.status === "failed") setError(update.message);
-        }
-      };
-      events.onerror = () => events.close();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
-  async function cancelAlignment() {
-    if (!jobId) {
-      setJobMessage("");
-      return;
-    }
-    try {
-      await apiFetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
-      setJobMessage("已请求取消……");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
-  async function downloadAss() {
-    try {
-      const content = await apiFetch<string>("/api/export.ass");
-      const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${project?.title || "karaoke"}.ass`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
-  if (!project) {
-    return <div className="boot-screen"><RefreshCw className="spin" /> <span>{error || "正在打开本地项目……"}</span></div>;
-  }
-  if (!project.lines.length) return <ImportPanel onImported={(value) => { setProject(value); setSelectedId(value.lines[0]?.id ?? ""); void getWaveform().then(setWaveform); }} />;
-
-  const issueCount = project.issues.length;
-  return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="brand"><div className="brand-mark"><Sparkles size={17} /></div><div><strong>Karaoke Studio</strong><span>本地卡拉 OK 对齐工作台</span></div></div>
-        <div className="project-title"><span>{project.title}</span><small>{project.alignment_source === "preserved_ass" ? "使用导入的 ASS 时间" : project.alignment_stale ? "读音已修改 · 需要重新对齐" : "正在使用 Yohane 原始时间"}</small></div>
-        <div className="header-actions">
-          <span className={`save-state ${saveState}`}>{saveState === "saved" ? <BadgeCheck size={14} /> : saveState === "saving" ? <RefreshCw className="spin" size={14} /> : <TriangleAlert size={14} />}{saveState === "saved" ? "已保存" : saveState === "saving" ? "保存中" : "保存失败"}</span>
-          <button onClick={undo} disabled={!undoStack.length} title="撤销时间修改" aria-label="撤销时间修改"><Undo2 size={16} /></button>
-          <button onClick={redo} disabled={!redoStack.length} title="重做时间修改" aria-label="重做时间修改"><Redo2 size={16} /></button>
-          <button onClick={() => setIssuesOpen((value) => !value)} className={issueCount ? "warning-button" : ""}><FileCheck2 size={16} /> {issueCount} 个问题</button>
-          <button onClick={() => void startAlignment(false)} disabled={!project.audio.prepared_path}><RefreshCw size={16} /> 开始对齐</button>
-          <button className="primary" onClick={downloadAss} disabled={project.alignment_stale}><Download size={16} /> 导出 ASS</button>
-        </div>
-      </header>
-
-      {error && <div className="error-banner floating"><TriangleAlert size={16} /><span>{error}</span><button onClick={() => setError("")}>关闭</button></div>}
-      {jobMessage && <div className="job-banner"><RefreshCw className={jobId ? "spin" : ""} size={14} />{jobMessage}<button onClick={() => void cancelAlignment()} aria-label={jobId ? "取消对齐" : "关闭任务状态"}><CircleStop size={14} /></button></div>}
-
-      <div className="workspace">
-        <aside className="lyrics-panel">
-          <div className="lyrics-heading"><div><span className="eyebrow">歌词</span><strong>{project.lines.length} 行</strong></div><span>来源 / 读音 / 时间</span></div>
-          <div className="lyrics-list">
-            {project.lines.map((line, index) => {
-              const text = line.display_tokens.map((token) => token.text).join("");
-              const hasIssue = project.issues.some((issue) => issue.line_id === line.id);
-              return <button key={line.id} className={`lyric-row ${selectedId === line.id ? "active" : ""}`} onClick={() => selectLine(line.id)}>
-                {line.paragraph_before > 0 && <span className="paragraph-gap" />}
-                <span className="line-number">{String(index + 1).padStart(2, "0")}</span>
-                <span className="line-copy"><strong>{text}</strong><small>{line.yohane_input}</small></span>
-                <span className={`line-state ${hasIssue ? "warning" : line.state}`} />
-              </button>;
-            })}
-          </div>
-          <div className="local-note"><CloudOff size={15} /><span>本地制作流程<br /><small>{runtime.device?.toUpperCase()} · 整曲对齐 · 本地文件</small></span></div>
-        </aside>
-
-        <main className="editor-main">
-          <AssPreview mediaRef={mediaRef} line={selectedLine} boundaries={editorBoundaries} currentMs={currentMs} hasProjectVideo={Boolean(project.source.video_path)} refreshKey={project.updated_at} />
-          <div className="transport">
-            <button onClick={() => stepLine(-1)} aria-label="上一句"><ChevronLeft size={18} /></button>
-            <button className="play-button" onClick={togglePlayback} aria-label={playing ? "暂停" : "播放当前句"}>{playing ? <Pause size={19} /> : <Play size={19} fill="currentColor" />}</button>
-            <button onClick={() => stepLine(1)} aria-label="下一句"><ChevronRight size={18} /></button>
-            <span className="time-readout">{(currentMs / 1000).toFixed(2)} <i>/</i> {(durationMs / 1000).toFixed(2)} s</span>
-            <label className="loop-toggle"><input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} /> 循环播放当前句</label>
-            <label className="speed-control">播放速度
-              <select aria-label="播放速度" value={playbackRate} onChange={(event) => setPlaybackRate(Number(event.target.value))}>
-                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => <option value={rate} key={rate}>{rate}×</option>)}
-              </select>
-            </label>
-            <div className="transport-spacer" />
-            {!project.model.license_accepted_at ? <button className="license-button" onClick={() => setLicenseOpen(true)}>查看并接受模型许可</button> : <button className="text-button" onClick={() => void startAlignment(true)}>下载模型并对齐</button>}
-          </div>
-          <Timeline line={selectedLine} boundaries={boundaries} peaks={waveform.peaks} durationMs={durationMs} currentMs={currentMs} onSeek={(value) => { if (mediaRef.current) mediaRef.current.currentTime = value / 1000; setCurrentMs(value); }} onPreview={setTimingPreview} onCommit={commitTiming} onRestore={restoreRaw} />
-        </main>
-
-        <Inspector project={project} line={selectedLine} boundaries={editorBoundaries} saving={saveState === "saving"} onSaveReading={updateReading} />
-      </div>
-
-      <footer className="status-bar"><span><i className="status-dot" />本地会话 127.0.0.1</span><span>16 kHz · 单声道</span><span>{project.model.model_id.split("/").pop()}</span><span className="footer-spacer" /><span>项目格式 v1</span><span>{project.alignment_stale ? "需要重新对齐" : "原始时间已保留"}</span></footer>
-
-      {issuesOpen && <div className="issues-drawer"><div className="drawer-heading"><strong>结构检查报告</strong><button onClick={() => setIssuesOpen(false)}>关闭</button></div>{project.issues.length ? project.issues.map((issue) => <button key={`${issue.line_id}-${issue.code}`} onClick={() => issue.line_id && selectLine(issue.line_id)}><TriangleAlert size={15} /><span><strong>{issue.code}</strong>{issue.message}</span></button>) : <div className="all-clear"><BadgeCheck />歌词结构检查完成。</div>}</div>}
-
-      {licenseOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setLicenseOpen(false)}>
-        <section className="license-dialog" role="dialog" aria-modal="true" aria-labelledby="model-license-title" onMouseDown={(event) => event.stopPropagation()}>
-          <span className="eyebrow">模型下载许可</span>
-          <h2 id="model-license-title">请确认强制对齐模型的许可</h2>
-          <p>模型 <code>{project.model.model_id}</code> 通过模型下载流程安装。</p>
-          <div className="license-notice"><TriangleAlert size={18} /><span>其许可为 <strong>{project.model.license}</strong>。具体使用条款见模型说明与许可页面。</span></div>
-          <p>下载前，Karaoke Studio 会记录你的确认、固定模型 ID、revision 和本地快照校验值。</p>
-          <a href={runtime.model_url} target="_blank" rel="noreferrer">打开模型说明与许可页面</a>
-          <div className="modal-actions"><button onClick={() => setLicenseOpen(false)}>取消</button><button className="primary" onClick={() => void acceptLicense()}>接受 {project.model.license}</button></div>
-        </section>
-      </div>}
-    </div>
-  );
+ useEffect(()=>{function key(e:KeyboardEvent){if((e.metaKey||e.ctrlKey)&&e.key===','){e.preventDefault();void openSettings('editor');return}if(settingsOpen||help||taskOpen)return;const target=e.target as HTMLElement;if(['INPUT','TEXTAREA','SELECT'].includes(target.tagName))return;if(e.code==='Space'){e.preventDefault();toggle()}if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){e.preventDefault();history(e.shiftKey?'redo':'undo')}if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();seek(Math.max(0,Math.min(duration,currentMs+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?preferences.seek_large_ms:preferences.key_step_ms))))}}window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[currentMs,duration,undoStack,redoStack,a,b,preferences.seek_large_ms,preferences.key_step_ms,settingsOpen,help,taskOpen,saveState,dirty]);
+ useEffect(()=>{if(project&&loadedId.current!==project.project_id){loadedId.current=project.project_id;setUndoStack([]);setRedoStack([])}},[project?.project_id]);
+ if(!project)return <div className="boot-screen"><RefreshCw size={18} className="spin"/>{error||'正在打开项目'}</div>;
+ if(!project.lines.length)return <ImportPanel onImported={p=>{setProject(p);setSelectedId(p.lines[0]?.id||'');void getWaveform().then(setWaveform)}}/>;
+ const subtitle=selected?.display_tokens.map(t=>t.text).join('');
+ const bitrateValue=exportBitrate??String(project.editor?.video_bitrate_mbps??'');
+ return <div className={`app-shell ${settingsOpen?'settings-visible':''}`}><header className="app-header"><div className="brand-mark">♪</div><strong>Karaoke Studio</strong><span className="header-slash">/</span><span className="project-title">{project.title}</span><div className="spacer"/><span className="save-state">{saveState==='saving'?'保存中':saveState==='error'?'保存失败':<><Check size={13}/>已保存</>}</span><button onClick={()=>history('undo')} disabled={!undoStack.length||saveState==='saving'} aria-label="撤销"><Undo2 size={16}/></button><button onClick={()=>history('redo')} disabled={!redoStack.length||saveState==='saving'} aria-label="重做"><Redo2 size={16}/></button><button onClick={()=>void openSettings('editor')} disabled={saveState==='saving'} aria-label="设置"><Settings2 size={16}/></button><button onClick={()=>setHelp(true)} aria-label="帮助"><HelpCircle size={16}/></button><button className="primary" onClick={()=>void task('render')} disabled={saveState==='saving'||dirty||taskBusy||project.alignment_stale||!validVideoBitrate(bitrateValue)}><Download size={15}/>导出成片</button></header>
+ <nav className="workspace-tabs"><button onClick={()=>{if(/^\/p\/[a-f0-9]{16}/.test(window.location.pathname)){window.location.assign('/');return}const w=window as unknown as {webkit?:{messageHandlers?:{desktop?:{postMessage:(s:string)=>void}}}};if(w.webkit?.messageHandlers?.desktop)w.webkit.messageHandlers.desktop.postMessage('open');else void apiFetch('/api/editor/open-folder')}}>项目</button><button className="active" onClick={()=>{if(settingsOpen)closeSettings()}}>打轴工作台</button><button onClick={()=>void openSettings('subtitle')}>字幕样式</button><button onClick={()=>setTaskOpen(true)}>导出任务</button><BitrateInput value={bitrateValue} onChange={setExportBitrate} disabled={taskBusy}/><label className="version-choice upload-option"><input type="checkbox" checked={uploadCopy} disabled={taskBusy} onChange={event=>setUploadCopy(event.target.checked)}/>同时生成上传版（500 MB 以内）</label><span className="spacer"/><span className="muted small">{scene?.canvas.width} × {scene?.canvas.height}</span></nav>
+ {error&&<div className="error-banner" role="alert"><span>{error}</span><button onClick={()=>setError('')} aria-label="关闭错误"><X size={14}/></button></div>}
+ {project.alignment_stale&&<div className="attention-banner"><span>读音已修改</span><button onClick={()=>void task('align')} disabled={taskBusy}>重新对齐</button></div>}
+ <div className="workspace"><aside className="lyrics-panel"><div className="section-heading">歌词与段落 <span className="muted">{project.lines.length} 句</span></div><div className="lyrics-list">{project.lines.map((line,i)=>{const timing=project.effective_boundaries[line.id];return <div key={line.id}>{(i===0||line.paragraph_before>0)&&<div className="paragraph-label">段落 {1+project.lines.slice(0,i).filter(l=>l.paragraph_before>0).length+(i>0&&line.paragraph_before>0?1:0)}</div>}<button className={`lyric-row ${line.id===selectedId?'active':''}`} onClick={()=>select(line.id)}><span>{line.display_tokens.map(t=>t.text).join('')}</span><small>{timing?.length?`${fmt(timing[0])} — ${fmt(timing.at(-1)!)}`:'待对齐'}</small></button></div>})}</div></aside>
+ <main className="editor-main"><div className="preview-toolbar"><span>画面预览</span><span>{segment&&segment.width>1700?'当前句超宽':''}</span></div><ProjectPreview scene={scene} mediaRef={mediaRef} selectedId={selectedId} boundaries={bounds} currentMs={currentMs} hasVideo={Boolean(project.source.video_path)}/><div className="transport"><span className="time-readout">{fmt(currentMs)}</span><button onClick={()=>project.lines[index-1]&&select(project.lines[index-1].id)} aria-label="上一句"><ChevronLeft size={17}/></button><button className="primary play-button" onClick={toggle} aria-label={playing?'暂停':'播放'}>{playing?<Pause size={17}/>:<Play size={17}/>}</button><button onClick={()=>project.lines[index+1]&&select(project.lines[index+1].id)} aria-label="下一句"><ChevronRight size={17}/></button><select aria-label="循环范围" value={loop} onChange={e=>setLoop(e.target.value as typeof loop)}><option value="line">循环此句</option><option value="selection" disabled={!range}>循环选中</option><option value="off">连续播放</option></select><select aria-label="播放速度" value={speed} onChange={e=>setSpeed(Number(e.target.value))}>{[.5,.75,1,1.25,1.5,2].map(v=><option value={v} key={v}>{v}×</option>)}</select></div></main>
+ <Inspector line={selected} range={range} bounds={bounds} scene={scene} saving={saveState==='saving'} onReading={reading}/></div>
+ <section className="editing-area"><div className="line-editor"><span>日文</span><input aria-label="当前句歌词" disabled={saveState==='saving'} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&dirty)saveText();if(e.key==='Escape')setText(selected?.original??'')}}/><button disabled={!dirty||saveState==='saving'} onClick={()=>saveText()}>保存</button></div><Timeline preferenceVersion={preferenceVersion} preferences={preferences} line={selected} boundaries={savedBounds} glyphs={segment?.glyphs} selectedRange={range??undefined} onSelect={setRange} peaks={waveform.peaks} waveformStart={waveform.start_ms} waveformEnd={waveform.end_ms} durationMs={duration} currentMs={currentMs} onSeek={seek} onPreview={setPreviewBounds} onCommit={commit} disabled={saveState==='saving'||dirty} onRestore={()=>selected&&enqueue(()=>apiFetch(`/api/lines/${selected.id}/restore-timing`,{method:'POST'}))}/></section>
+ <footer className="status-bar"><span>{range?selected?.moras.slice(range[0],range[1]).map(m=>m.kana).join(''):subtitle}</span><span>{project.alignment_stale?'需要对齐':'时间轴已同步'}</span></footer>
+ {settingsOpen&&<SettingsPanel scene={project.editor} preferences={preferences} initialTab={settingsTab} onPreview={setStyleScene} onSave={applySettings} onClose={closeSettings}/>}
+ {help&&<div className="modal-backdrop" onMouseDown={()=>setHelp(false)}><section className="dialog" role="dialog" aria-label="帮助" onMouseDown={e=>e.stopPropagation()}><div className="dialog-heading"><strong>操作</strong><button onClick={()=>setHelp(false)} aria-label="关闭帮助"><X size={16}/></button></div><p>拖动色块移动字音，拖动两侧调整起止。</p><p>空格播放；方向键定位；⌘Z / Ctrl+Z 撤销。</p><p>修改读音后可重新自动对齐。</p><button onClick={()=>{setHelp(false);void task('align')}}><RefreshCw size={14}/>自动对齐</button><button onClick={()=>void apiFetch('/api/editor/open-folder')}><FolderOpen size={14}/>项目文件夹</button></section></div>}
+ {taskOpen&&<div className="modal-backdrop" onMouseDown={()=>setTaskOpen(false)}><section className="dialog" role="dialog" aria-label="任务" onMouseDown={e=>e.stopPropagation()}><div className="dialog-heading"><strong>任务</strong><button onClick={()=>setTaskOpen(false)} aria-label="关闭任务"><X size={16}/></button></div><p>{taskMessage||'暂无任务'}</p>{taskBusy&&<><RefreshCw size={18} className="spin"/>{currentJob&&/^\/p\//.test(window.location.pathname)&&<button onClick={()=>void stopTask()}>停止任务</button>}</>}
+ {currentJob?.mode==='render'&&!taskBusy&&['failed','interrupted','cancelled'].includes(currentJob.status)&&
+   <button onClick={()=>void task('render',false,currentJob.upload??false,currentJob.video_bitrate_mbps??null)}>从断点继续导出</button>}
+ {currentJob?.details?.overwide?.map(line=><p key={line.index}>第 {line.index+1} 句 · {Math.round(line.width_px)} px · {line.text}</p>)}
+ {Object.entries(files).map(([name,path])=><p key={name} className="output-path" title={path}>
+   <a href={apiUrl(`/api/jobs/${currentJob?.id}/files/${name}`)} download>{name.endsWith('_upload')?`${outputLabels[name.slice(0,-7)]??name.slice(0,-7)} · 上传版`:outputLabels[name]??name}</a> · {path.split(/[\\/]/).at(-1)}
+ </p>)}{Object.keys(files).length>0&&<button onClick={()=>void apiFetch('/api/editor/open-folder')}><FolderOpen size={14}/>打开文件夹</button>}</section></div>}
+ </div>
 }
-
 export default App;

@@ -23,7 +23,8 @@ from .yohane_adapter import run_yohane
 
 
 @contextmanager
-def _production_lock(path: Path):
+def _production_lock(path: Path, message: str | None = None):
+    message = message or f"该项目已有制作任务运行: {path.parent.parent}"
     with path.open("a+b") as lock:
         if os.name == "nt":
             import msvcrt
@@ -35,16 +36,16 @@ def _production_lock(path: Path):
             try:
                 msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
-                raise ValueError(f"该项目已有制作任务运行: {path.parent.parent}") from exc
+                raise ValueError(message) from exc
         else:
             import fcntl
 
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
-                raise ValueError(f"该项目已有制作任务运行: {path.parent.parent}") from exc
+                raise ValueError(message) from exc
         try:
-            yield
+            yield lock
         finally:
             if os.name == "nt":
                 lock.seek(0)
@@ -122,12 +123,23 @@ def produce_project(
     off_vocal: Path | None = None,
     translation: Path | None = None,
     outputs: list[str] | None = None,
-    top_y: float = section("layout")["top_y"],
-    bottom_y: float = section("layout")["bottom_y"],
-    margin_x: float = section("layout")["margin_x"],
+    top_y: float = 750,
+    bottom_y: float = 950,
+    margin_x: float = 110,
     target_width: int | None = None,
     target_height: int | None = None,
     force_render: bool = False,
+    blackout_bottom: float | None = None,
+    blackout_y: float | None = None,
+    segment_seconds: float = 30,
+    video_bitrate_mbps: float | None = None,
+    render_overrides: dict | None = None,
+    countdown: bool = True,
+    katakana_ruby: bool = True,
+    fresh: bool = True,
+    prepare_only: bool = False,
+    allow_download: bool = False,
+    on_event: Callable[[str, str], None] | None = None,
 ) -> tuple[Path, object, dict]:
     """Resumable full production. Media stay read-only; timing is clip-relative."""
     from .ass import export_ass
@@ -139,8 +151,8 @@ def produce_project(
     audio = (audio or video).resolve(strict=True)
     off_vocal = off_vocal.resolve(strict=True) if off_vocal is not None else None
     translation = translation.resolve(strict=True) if translation is not None else None
-    now = datetime.now()
-    date = f"{now.month}月{now.day}日"
+    today = datetime.now()
+    date = f"{today.month}月{today.day}日"
     root = (project_dir or video.parent / f"{title}-{date}").resolve()
     try:
         initial_state = json.loads(
@@ -160,9 +172,32 @@ def produce_project(
     end = parse_media_time(trim_end) if trim_end is not None else video_duration
     if not 0 <= start < end or (video_duration > 0 and end > video_duration + 0.05):
         raise ValueError(f"裁剪区间无效: {start}–{end}; 视频长度 {video_duration}")
-    text = lyrics.read_text(encoding="utf-8")
+    text = lyrics.read_text(encoding="utf-8-sig")
     if not text.strip():
         raise ValueError("歌词为空")
+    first_line = next((line for line in text.splitlines() if line.strip()), "")
+    bilingual = first_line.startswith(("日文：", "日文:"))
+    if bilingual:
+        from .derived_ass import _load_translation
+
+        pairs = _load_translation(lyrics)["lines"]
+        text = (
+            "\n".join(
+                "\n" * entry["paragraph_before"] + entry["annotated_source_text"] for entry in pairs
+            )
+            + "\n"
+        )
+        if translation is None:
+            translation = lyrics
+    if blackout_bottom is not None and blackout_y is not None:
+        raise ValueError("--blackout-bottom 和 --blackout-y 请选择一种")
+    blackout = []
+    if blackout_bottom is not None:
+        if not 0 < blackout_bottom <= 1:
+            raise ValueError("底部遮黑比例应在0到1之间，例如0.18")
+        blackout = [{"y": 1080 * (1 - blackout_bottom), "height": 1080 * blackout_bottom}]
+    if blackout_y is not None:
+        blackout = [{"y": blackout_y, "height": 1080 - blackout_y}]
     frame = (
         {"mode": "preserve"}
         if target_width is None and target_height is None
@@ -173,37 +208,49 @@ def produce_project(
         }
     )
     # Validate all declarative options before importing or starting the model.
-    job = RenderJob.model_validate(
-        {
-            "source_ass": root / f"字幕模板-{artifact_date}.ass",
-            "output_ass": root / f"卡拉OK-{artifact_date}.ass",
-            "theme": theme,
-            "colors": colors or {},
-            "title_text": title_text,
-            "audio_end": end - start,
-            "reuse_outputs": not force_render,
-            "outputs": outputs,
-            "translation": {"file": translation} if translation is not None else None,
-            "layout": {"top_y": top_y, "bottom_y": bottom_y, "margin_x": margin_x},
-            "media": {
-                "video": video,
-                "audio": audio,
-                "external_audio": off_vocal,
-                "match_reference_audio": audio,
-                "trim_start": start,
-                "trim_end": end,
-                "output_dir": root,
-                "frame": frame,
-            },
-        }
-    )
+    job_payload = {
+        "source_ass": root / f"字幕模板-{artifact_date}.ass",
+        "output_ass": root / f"卡拉OK-{artifact_date}.ass",
+        "theme": theme,
+        "colors": colors or {},
+        "title_text": title_text,
+        "audio_end": end - start,
+        "reuse_outputs": not (force_render or fresh),
+        "countdown": countdown,
+        "katakana_ruby": katakana_ruby,
+        "outputs": outputs,
+        "translation": {"file": translation} if translation is not None else None,
+        "layout": {"top_y": top_y, "bottom_y": bottom_y, "margin_x": margin_x},
+        "media": {
+            "video": video,
+            "audio": audio,
+            "external_audio": off_vocal,
+            "match_reference_audio": audio,
+            "trim_start": start,
+            "trim_end": end,
+            "output_dir": root,
+            "frame": frame,
+            "blackout": blackout,
+            "segment_seconds": segment_seconds,
+            "video_bitrate_mbps": video_bitrate_mbps,
+        },
+    }
+    for key, value in (render_overrides or {}).items():
+        if isinstance(value, dict) and isinstance(job_payload.get(key), dict):
+            job_payload[key].update(value)
+        elif key not in ("media", "translation") or job_payload.get(key) is not None:
+            job_payload[key] = value
+    job = RenderJob.model_validate(job_payload)
     _canvas(job)
     unavailable = set(outputs or []) - _available_outputs(job)
     if unavailable:
         raise ValueError("请求的输出缺少对应输入: " + ", ".join(sorted(unavailable)))
     root.mkdir(parents=True, exist_ok=True)
     work = root / ".karaoke-work"
-    work.mkdir(exist_ok=True)
+    if work.exists() and not work.is_dir():
+        raise ValueError(f"制作缓存路径需要为目录，当前为文件: {work}")
+    if not work.is_dir():
+        work.mkdir(exist_ok=True)
     with _production_lock(work / "production.lock"):
         state_path = work / "production-state.json"
         try:
@@ -215,6 +262,7 @@ def produce_project(
             "started_at": utc_now().isoformat(),
             "entry": "karaoke produce",
             "project": str(root),
+            "execution_mode": "fresh" if fresh else "reuse",
             "job": job.model_dump(mode="json"),
             "stages": [],
             "ok": False,
@@ -228,6 +276,8 @@ def produce_project(
             with journal.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(item, ensure_ascii=False) + "\n")
             print(json.dumps(item, ensure_ascii=False), file=sys.stderr, flush=True)
+            if on_event is not None:
+                on_event(stage, status)
 
         def stage(name: str, action: Callable, reuse: bool = False):
             begun = time.perf_counter()
@@ -280,20 +330,37 @@ def produce_project(
                 "margin_x": margin_x,
                 "target_width": target_width,
                 "target_height": target_height,
+                "blackout_bottom": blackout_bottom,
+                "blackout_y": blackout_y,
+                "segment_seconds": segment_seconds,
+                "video_bitrate_mbps": video_bitrate_mbps,
+                "render_overrides": render_overrides or {},
+                "countdown": countdown,
+                "katakana_ruby": katakana_ruby,
             }
             write_record(work / "production-request.json", request)
+            alignment_lyrics = lyrics
+            if bilingual:
+                alignment_lyrics = work / f"LyricsJapanese-{artifact_date}.txt"
+                if (
+                    not alignment_lyrics.exists()
+                    or alignment_lyrics.read_text(encoding="utf-8") != text
+                ):
+                    alignment_lyrics.write_text(text, encoding="utf-8")
             lyric_key = {
                 "text": text,
-                "format": lyrics.suffix.lower(),
+                "format": alignment_lyrics.suffix.lower(),
                 "code": code_stamp(["lyrics", "structure", "mora"]),
             }
             project_lines = [line.original for line in project.lines]
             can_reuse_lyrics = (
-                state.get("lyrics") == lyric_key and state.get("line_texts") == project_lines
+                not fresh
+                and state.get("lyrics") == lyric_key
+                and state.get("line_texts") == project_lines
             )
 
             def import_text():
-                source_format, imported = import_lyrics(lyrics)
+                source_format, imported = import_lyrics(alignment_lyrics)
                 project.lines = build_lines(imported)
                 project.source.lyrics_format = source_format
                 project.source.imported_at = utc_now()
@@ -308,8 +375,13 @@ def produce_project(
             def retain_inputs():
                 retained = state.setdefault("retained_inputs", {})
                 destination_dir = work / "inputs"
-                destination_dir.mkdir(exist_ok=True)
-                for kind, source in (("lyrics", lyrics), ("audio", audio), ("video", video)):
+                if not destination_dir.is_dir():
+                    destination_dir.mkdir(exist_ok=True)
+                for kind, source in (
+                    ("lyrics", alignment_lyrics),
+                    ("audio", audio),
+                    ("video", video),
+                ):
                     destination = destination_dir / f"{kind}{source.suffix.lower()}"
                     identity = file_identity(source)
                     previous = retained.get(kind, {})
@@ -354,7 +426,8 @@ def produce_project(
             }
             prepared = root / project.audio.prepared_path if project.audio.prepared_path else None
             reuse_audio = (
-                state.get("preparation") == preparation
+                not fresh
+                and state.get("preparation") == preparation
                 and prepared is not None
                 and prepared.is_file()
                 and state.get("prepared_file") == file_identity(prepared)
@@ -383,7 +456,10 @@ def produce_project(
                 and state.get("alignment_code") == alignment_code
                 and state.get("alignment_inputs") == alignment_inputs
             )
-            stage("整曲对齐", lambda: align_project(root), reuse_alignment)
+            alignment_options = {"force": fresh}
+            if allow_download:
+                alignment_options["allow_download"] = True
+            stage("整曲对齐", lambda: align_project(root, **alignment_options), reuse_alignment)
             project = load_project(root)
             issues = [
                 issue for issue in project.issues if issue.severity == "error"
@@ -407,7 +483,8 @@ def produce_project(
             )
             job_path = root / "render-job.json"
             write_record(job_path, job.model_dump(mode="json"))
-            result = stage("字幕展开及成片", lambda: run_render_job(job))
+            active_job = job.model_copy(update={"outputs": []}) if prepare_only else job
+            result = stage("字幕展开及成片", lambda: run_render_job(active_job))
             report["ok"] = True
             report["timings"] = result.timings
             report["outputs"] = (
@@ -416,6 +493,8 @@ def produce_project(
                         "path": str(item.path),
                         "reused": item.reused,
                         "ffmpeg_exit_code": item.ffmpeg_exit_code,
+                        "segments_total": item.segments_total,
+                        "segments_reused": item.segments_reused,
                         "elapsed_seconds": item.elapsed_seconds,
                     }
                     for name, item in result.media.outputs.items()
@@ -509,6 +588,7 @@ def prepare_project(project_dir: Path) -> KaraokeProject:
     project.audio = prepare_audio(source, project_dir)
     if (
         project.raw_alignment
+        and project.alignment_source != "preserved_ass"
         and project.raw_alignment.audio_sha256 != project.audio.prepared_sha256
     ):
         project.alignment_stale = True
@@ -522,10 +602,11 @@ def align_project(
     allow_download: bool = False,
     yohane_python: Path | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    force: bool = False,
 ) -> tuple[KaraokeProject, bool]:
     project = load_project(project_dir)
     key = alignment_cache_key(project)
-    alignment = load_cached_alignment(project_dir, key)
+    alignment = None if force else load_cached_alignment(project_dir, key)
     cache_hit = alignment is not None
     if alignment is None:
         alignment = run_yohane(

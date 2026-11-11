@@ -21,7 +21,7 @@ class AlignmentCancelled(RuntimeError):
 def find_yohane_python(project_dir: Path) -> Path:
     candidate = yohane_python()
     if candidate.is_file():
-        return candidate.resolve()
+        return candidate.absolute()
     raise RuntimeError(f"Yohane Python executable: {candidate}")
 
 

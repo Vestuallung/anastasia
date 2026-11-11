@@ -1,175 +1,43 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Minus, Plus, RotateCcw } from "lucide-react";
-import type { LyricLine } from "../types";
-
-interface TimelineProps {
-  line?: LyricLine;
-  boundaries: number[];
-  peaks: number[];
-  durationMs: number;
-  currentMs: number;
-  onSeek: (milliseconds: number) => void;
-  onPreview: (boundaries: number[] | null) => void;
-  onCommit: (
-    before: number[],
-    after: number[],
-    kind: "line_shift" | "boundary" | "line_start" | "line_end",
-    boundaryIndex?: number,
-  ) => void;
-  onRestore: () => void;
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Minus, Plus, RotateCcw } from 'lucide-react';
+import { defaultPreferences } from '../lib/preferences-11月7日';
+import type { EditorPreferences } from '../lib/preferences-11月7日';
+import type { LyricLine, SceneGlyph } from '../types';
+interface Props {
+  preferences?:EditorPreferences; preferenceVersion?:number;
+  line?: LyricLine; boundaries:number[]; peaks:number[]; durationMs:number; currentMs:number;
+  waveformStart?:number; waveformEnd?:number; glyphs?:SceneGlyph[]; selectedRange?:[number,number]; onSelect?:(range:[number,number])=>void;
+  onSeek:(ms:number)=>void; onPreview:(value:number[]|null)=>void;
+  onCommit:(before:number[],after:number[],kind:'line_shift'|'boundary'|'line_start'|'line_end',index?:number)=>void;
+  onRestore:()=>void; disabled?:boolean;
 }
-
-interface DragState {
-  type: "line" | "boundary";
-  index?: number;
-  startX: number;
-  before: number[];
-}
-
-const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high);
-const formatTime = (value: number) => `${Math.floor(value / 60000)}:${((value % 60000) / 1000).toFixed(2).padStart(5, "0")}`;
-
-export function Timeline({ line, boundaries, peaks, durationMs, currentMs, onSeek, onPreview, onCommit, onRestore }: TimelineProps) {
-  const root = useRef<HTMLDivElement>(null);
-  const drag = useRef<DragState | null>(null);
-  const draftRef = useRef<number[]>(boundaries);
-  const [draft, setDraft] = useState<number[]>(boundaries);
-  const [zoom, setZoom] = useState(1);
-
-  useEffect(() => {
-    drag.current = null;
-    draftRef.current = boundaries;
-    setDraft(boundaries);
-    setZoom(1);
-    onPreview(null);
-  }, [line?.id]);
-
-  const source = drag.current ? draft : boundaries;
-  const lineStart = source[0] ?? 0;
-  const lineEnd = source[source.length - 1] ?? Math.min(durationMs, 1000);
-  const lineDuration = Math.max(200, lineEnd - lineStart);
-  const context = Math.max(140, (lineDuration * 0.18) / zoom);
-  const viewStart = Math.max(0, lineStart - context);
-  const viewEnd = Math.min(durationMs || lineEnd + context, lineEnd + context);
-  const viewDuration = Math.max(1, viewEnd - viewStart);
-  const canvasWidth = Math.max(920, Math.max(1, line?.moras.length ?? 0) * 72);
-  const toPercent = (value: number) => ((value - viewStart) / viewDuration) * 100;
-  const currentMora = source.findIndex((value, index) => index < source.length - 1 && currentMs >= value && currentMs < source[index + 1]);
-
-  const visiblePeaks = useMemo(() => {
-    if (!peaks.length || !durationMs) return [];
-    const start = Math.floor((viewStart / durationMs) * peaks.length);
-    const end = Math.ceil((viewEnd / durationMs) * peaks.length);
-    return peaks.slice(start, Math.max(start + 1, end));
-  }, [durationMs, peaks, viewEnd, viewStart]);
-
-  function timeAt(clientX: number) {
-    const rect = root.current!.getBoundingClientRect();
-    return Math.round(viewStart + clamp((clientX - rect.left) / rect.width, 0, 1) * viewDuration);
-  }
-
-  function updateDraft(next: number[]) {
-    draftRef.current = next;
-    setDraft(next);
-    onPreview(next);
-  }
-
-  function move(clientX: number) {
-    const state = drag.current;
-    if (!state || !root.current) return;
-    if (state.type === "line") {
-      const delta = timeAt(clientX) - timeAt(state.startX);
-      const minDelta = -state.before[0];
-      const maxDelta = durationMs - state.before[state.before.length - 1];
-      const bounded = clamp(delta, minDelta, maxDelta);
-      updateDraft(state.before.map((value) => value + bounded));
-      return;
-    }
-    const index = state.index!;
-    const next = [...state.before];
-    const low = index === 0 ? 0 : next[index - 1];
-    const high = index === next.length - 1 ? durationMs : next[index + 1];
-    next[index] = clamp(timeAt(clientX), low, high);
-    updateDraft(next);
-  }
-
-  function finish() {
-    const state = drag.current;
-    if (!state) return;
-    const after = draftRef.current;
-    drag.current = null;
-    onPreview(null);
-    if (after.some((value, index) => value !== state.before[index])) {
-      const kind = state.type === "line" ? "line_shift" : state.index === 0 ? "line_start" : state.index === after.length - 1 ? "line_end" : "boundary";
-      onCommit(state.before, after, kind, state.index);
-    }
-  }
-
-  function beginLine(event: React.PointerEvent) {
-    if (!source.length) return;
-    const before = [...source];
-    drag.current = { type: "line", startX: event.clientX, before };
-    draftRef.current = before;
-    setDraft(before);
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function beginBoundary(event: React.PointerEvent, index: number) {
-    event.stopPropagation();
-    const before = [...source];
-    drag.current = { type: "boundary", index, startX: event.clientX, before };
-    draftRef.current = before;
-    setDraft(before);
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  return (
-    <section className="timeline-panel" aria-label="单句时间轴编辑器">
-      <div className="timeline-toolbar">
-        <div>
-          <span className="eyebrow">当前句 MORA 时间轴</span>
-          <strong>{line ? `${line.source_index + 1}. ${line.display_tokens.map((token) => token.text).join("")}` : "尚未选择歌词"}</strong>
-        </div>
-        <div className="timeline-actions">
-          <span className="timeline-help">拖动边界会同时调整左右两个音</span>
-          <button title="缩小" aria-label="缩小时间轴" onClick={() => setZoom((value) => Math.max(1, value / 1.4))}><Minus size={15} /></button>
-          <span>{zoom.toFixed(1)}×</span>
-          <button title="放大" aria-label="放大时间轴" onClick={() => setZoom((value) => Math.min(8, value * 1.4))}><Plus size={15} /></button>
-          <button className="text-button" onClick={onRestore}><RotateCcw size={14} /> 恢复原始</button>
-        </div>
-      </div>
-      <div className="timeline-scroll">
-        <div
-          className="timeline-track"
-          ref={root}
-          style={{ width: `${canvasWidth}px` }}
-          onPointerMove={(event) => move(event.clientX)}
-          onPointerUp={finish}
-          onPointerCancel={finish}
-          onDoubleClick={(event) => onSeek(timeAt(event.clientX))}
-        >
-          <svg className="waveform" viewBox={`0 0 ${Math.max(1, visiblePeaks.length)} 100`} preserveAspectRatio="none" aria-hidden="true">
-            {visiblePeaks.map((peak, index) => <line key={index} x1={index} x2={index} y1={50 - peak * 42} y2={50 + peak * 42} />)}
-          </svg>
-          <div className="ruler">
-            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => <span key={ratio} style={{ left: `${ratio * 100}%` }}>{formatTime(viewStart + ratio * viewDuration)}</span>)}
-          </div>
-          {source.length > 1 && <div className="line-region" style={{ left: `${toPercent(source[0])}%`, width: `${toPercent(source[source.length - 1]) - toPercent(source[0])}%` }} onPointerDown={beginLine} title="拖动整句" />}
-          {source.slice(0, -1).map((start, index) => {
-            const end = source[index + 1];
-            return <div className={`mora-segment ${index === currentMora ? "active" : currentMs >= end ? "passed" : ""}`} key={`${line?.id}-mora-${index}`} style={{ left: `${toPercent(start)}%`, width: `${toPercent(end) - toPercent(start)}%` }}>
-              <strong>{line?.moras[index]?.kana || `#${index + 1}`}</strong><span>{Math.max(0, end - start)} ms</span>
-            </div>;
-          })}
-          {source.map((value, index) => {
-            const leftMora = index > 0 ? line?.moras[index - 1]?.kana : "句首";
-            const rightMora = index < source.length - 1 ? line?.moras[index]?.kana : "句尾";
-            return <button key={`${line?.id}-boundary-${index}`} className={`boundary ${index === 0 || index === source.length - 1 ? "edge" : ""}`} style={{ left: `${toPercent(value)}%` }} onPointerDown={(event) => beginBoundary(event, index)} aria-label={`边界 ${index + 1}，${value} 毫秒，左侧 ${leftMora}，右侧 ${rightMora}`} title={`${leftMora}｜${rightMora} · ${value} ms`}><span>{index === 0 ? "入" : index === source.length - 1 ? "出" : value}</span></button>;
-          })}
-          <div className="playhead" style={{ left: `${toPercent(currentMs)}%` }} />
-        </div>
-      </div>
-      <div className="timeline-legend"><span><i className="legend-edge" />绿色：整句首尾</span><span><i />蓝色：相邻 mora 共享边界</span><span>双击波形可定位播放</span></div>
-    </section>
-  );
+type Drag={kind:'move'|'boundary';range:[number,number];index:number;x:number;before:number[];width:number};
+const fmt=(ms:number)=>`${Math.floor(ms/60000).toString().padStart(2,'0')}:${((ms%60000)/1000).toFixed(2).padStart(5,'0')}`;
+export function Timeline({preferences=defaultPreferences,preferenceVersion=0,line,boundaries,peaks,durationMs,currentMs,glyphs=[],waveformStart=0,waveformEnd=durationMs,selectedRange,onSelect,onSeek,onPreview,onCommit,onRestore,disabled=false}:Props){
+ const root=useRef<HTMLDivElement>(null),scroll=useRef<HTMLDivElement>(null),drag=useRef<Drag|null>(null),draftRef=useRef(boundaries);
+ const [draft,setDraft]=useState(boundaries),[zoom,setZoom]=useState(1),[width,setWidth]=useState(900),[mode,setMode]=useState<'sound'|'char'>('sound'),[snap,setSnap]=useState(preferences.snap);
+ useEffect(()=>{drag.current=null;draftRef.current=boundaries;setDraft(boundaries);onPreview(null)},[line?.id]);
+ useEffect(()=>{if(!scroll.current)return;const o=new ResizeObserver(e=>setWidth(e[0].contentRect.width));o.observe(scroll.current);return()=>o.disconnect()},[]);
+ useEffect(()=>setSnap(preferences.snap),[preferences.snap,preferenceVersion]);
+ useEffect(()=>{if(!preferences.show_readings&&preferences.show_characters)setMode('char');else if(!preferences.show_characters&&preferences.show_readings)setMode('sound')},[preferences.show_readings,preferences.show_characters]);
+ const source=drag.current?draft:boundaries;
+ const from=Math.max(0,(boundaries[0]??0)-450),to=Math.min(durationMs||1,(boundaries.at(-1)??1000)+450),span=Math.max(200,to-from);
+ const trackWidth=Math.max(width,Math.min(2200,(line?.moras.length??0)*38))*zoom;
+ const percent=(v:number)=>(v-from)/span*100;
+ const waveform=useMemo(()=>{if(!peaks.length||!durationMs)return [];const waveDuration=Math.max(1,waveformEnd-waveformStart);const a=Math.max(0,Math.floor((from-waveformStart)/waveDuration*peaks.length)),b=Math.ceil((to-waveformStart)/waveDuration*peaks.length);return peaks.slice(a,b)},[peaks,durationMs,from,to,waveformStart,waveformEnd]);
+ function begin(e:React.PointerEvent,kind:Drag['kind'],range:[number,number],index=range[0]){if(disabled||source.length<2)return;e.stopPropagation();e.preventDefault();onSelect?.(range);const before=[...source];drag.current={kind,range,index,x:e.clientX,before,width:root.current!.getBoundingClientRect().width};draftRef.current=before;setDraft(before);root.current!.setPointerCapture(e.pointerId)}
+ function move(e:React.PointerEvent){const d=drag.current;if(!d)return;let next=[...d.before];let delta=(e.clientX-d.x)/d.width*span;
+ if(d.kind==='boundary'){let v=d.before[d.index]+delta;if(snap&&!e.altKey)v=Math.round(v/preferences.snap_ms)*preferences.snap_ms;const low=d.index?next[d.index-1]:0,high=d.index<next.length-1?next[d.index+1]:durationMs;next[d.index]=Math.round(Math.max(low,Math.min(high,v)))}
+ else{const [a,b]=d.range;delta=Math.round(delta);delta=Math.max((a?next[a-1]:0)-next[a],Math.min((b<next.length-1?next[b+1]:durationMs)-next[b],delta));for(let i=a;i<=b;i++)next[i]+=delta}
+ draftRef.current=next;setDraft(next);onPreview(next)}
+ function finish(cancel=false){const d=drag.current;if(!d)return;drag.current=null;onPreview(null);if(cancel){setDraft(d.before);return}const next=draftRef.current;if(next.some((v,i)=>v!==d.before[i]))onCommit(d.before,next,d.kind==='move'?'line_shift':d.index===0?'line_start':d.index===next.length-1?'line_end':'boundary',d.kind==='boundary'?d.index:undefined)}
+ function segment(label:string,a:number,b:number,kind:string,key:string){if(a<0||b>=source.length)return null;const selected=selectedRange?.[0]===a&&selectedRange?.[1]===b;return <div key={key} className={`time-block ${kind} ${selected?'selected':''} ${currentMs>=source[a]&&currentMs<source[b]?'active':''}`} style={{left:`${percent(source[a])}%`,width:`${Math.max(.15,percent(source[b])-percent(source[a]))}%`}} onPointerDown={e=>begin(e,'move',[a,b])} onClick={()=>onSelect?.([a,b])}><span>{label}</span>{[a,b].map((index,i)=><button key={i} className={`time-handle ${i?'right':'left'}`} aria-label={`边界 ${index+1}，${source[index]} 毫秒，${label}`} onPointerDown={e=>begin(e,'boundary',[a,b],index)} onKeyDown={e=>{if(!disabled&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){e.preventDefault();e.stopPropagation();const next=[...source];next[index]=Math.max(index?next[index-1]:0,Math.min(index<next.length-1?next[index+1]:durationMs,next[index]+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?preferences.seek_large_ms:preferences.key_step_ms)));onCommit(source,next,'boundary',index)}}}/>)}</div>}
+ return <section className="timeline-panel" aria-label="单句时间轴编辑器"><div className="timeline-toolbar"><strong>精细打轴</strong><span className="muted small">{line?`第 ${line.source_index+1} 句`:''}</span><div className="spacer"/><label className="compact-check"><input type="checkbox" checked={snap} onChange={e=>setSnap(e.target.checked)}/>吸附</label><button aria-label="缩小时间轴" onClick={()=>setZoom(z=>Math.max(1,z/1.4))}><Minus size={15}/></button><button aria-label="放大时间轴" onClick={()=>setZoom(z=>Math.min(6,z*1.4))}><Plus size={15}/></button><button aria-pressed={mode==='char'} disabled={!preferences.show_characters} onClick={()=>setMode('char')}>正文单字</button><button aria-pressed={mode==='sound'} disabled={!preferences.show_readings} onClick={()=>setMode('sound')}>读音</button><button aria-label="恢复原始时间" onClick={onRestore} disabled={disabled}><RotateCcw size={15}/></button></div><div className="timeline-content"><div className="lane-labels" style={{gridTemplateRows:`28px ${preferences.show_waveform?'80px ':''}44px ${preferences.show_characters?'44px ':''}${preferences.show_readings?'44px':''}`}}><span/>{preferences.show_waveform&&<span>波形</span>}<span>句子</span>{preferences.show_characters&&<span>正文</span>}{preferences.show_readings&&<span>读音</span>}</div><div className="timeline-scroll" ref={scroll}><div className="timeline-track" ref={root} style={{width:trackWidth}} onPointerMove={move} onPointerUp={()=>finish()} onPointerCancel={()=>finish(true)}>
+ <div className="ruler">{[0,.25,.5,.75,1].map(r=><span key={r} style={{left:`${r*100}%`}}>{fmt(from+span*r)}</span>)}</div>
+ {preferences.show_waveform&&<svg className="waveform" viewBox={`0 0 ${Math.max(1,waveform.length)} 80`} preserveAspectRatio="none" role="img" aria-label="音频波形" onPointerDown={e=>{const r=e.currentTarget.getBoundingClientRect();onSeek(Math.round(from+(e.clientX-r.left)/r.width*span))}}>{waveform.map((v,i)=><line key={i} x1={i} x2={i} y1={40-v*34} y2={40+v*34}/>)}</svg>}
+ <div className="time-lane">{source.length>1&&segment(line?.display_tokens.map(t=>t.text).join('')||'',0,source.length-1,'phrase','phrase')}</div>
+ {preferences.show_characters&&<div className={`time-lane ${mode==='char'?'focused':''}`}>{glyphs.map((g,i)=>g.mora_indices.length?segment(g.text,g.mora_indices[0],g.mora_indices.at(-1)!+1,'character',String(i)):null)}</div>}
+ {preferences.show_readings&&<div className={`time-lane ${mode==='sound'?'focused':''}`}>{source.slice(0,-1).map((_,i)=>segment(line?.moras[i]?.kana||'·',i,i+1,'sound',String(i)))}</div>}
+ <div className="playhead" style={{left:`${percent(currentMs)}%`}}/>
+ </div></div></div><div className="timeline-footer"><span className="muted">{selectedRange&&source[selectedRange[1]]!=null?`${fmt(source[selectedRange[0]])} — ${fmt(source[selectedRange[1]])} · ${source[selectedRange[1]]-source[selectedRange[0]]} ms`:''}</span></div></section>
 }

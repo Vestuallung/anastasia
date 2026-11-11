@@ -19,6 +19,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--main-only", action="store_true")
+    parser.add_argument("--alignment-only", action="store_true")
     parser.add_argument("--with-model", action="store_true")
     parser.add_argument("--build-web", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -29,6 +30,7 @@ def main() -> None:
     from karaoke_studio.config import section
 
     uv = os.environ.get("KARAOKE_UV") or shutil.which("uv") or "uv"
+    git = os.environ.get("KARAOKE_GIT") or shutil.which("git") or "git"
 
     def run(command: list[str]) -> None:
         print(" ".join(map(str, command)), flush=True)
@@ -37,7 +39,11 @@ def main() -> None:
                 command = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", *command]
             subprocess.run(command, cwd=ROOT, check=True)
 
-    run([uv, "sync", "--python", "3.12", "--all-extras"])
+    if args.main_only and args.alignment_only:
+        parser.error("choose main-only or alignment-only")
+    interpreter = sys._base_executable if sys.version_info[:2] == (3, 12) else "3.12"
+    if not args.alignment_only:
+        run([uv, "sync", "--locked", "--python", interpreter, "--all-extras"])
     if not args.main_only:
         runtime = args.runtime_dir.resolve()
         checkout = runtime / "yohane"
@@ -46,11 +52,11 @@ def main() -> None:
         if not args.dry_run:
             runtime.mkdir(parents=True, exist_ok=True)
         if not (checkout / ".git").exists():
-            run(["git", "init", str(checkout)])
-            run(["git", "-C", str(checkout), "remote", "add", "origin", settings["repository"]])
+            run([git, "init", str(checkout)])
+            run([git, "-C", str(checkout), "remote", "add", "origin", settings["repository"]])
             run(
                 [
-                    "git",
+                    git,
                     "-C",
                     str(checkout),
                     "fetch",
@@ -60,17 +66,17 @@ def main() -> None:
                     settings["revision"],
                 ]
             )
-            run(["git", "-C", str(checkout), "checkout", "--detach", "FETCH_HEAD"])
+            run([git, "-C", str(checkout), "checkout", "--detach", "FETCH_HEAD"])
         if args.dry_run:
-            run(["git", "-C", str(checkout), "apply", str(patch)])
+            run([git, "-C", str(checkout), "apply", str(patch)])
         else:
             current = subprocess.check_output(
-                ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True
+                [git, "-C", str(checkout), "rev-parse", "HEAD"], text=True
             ).strip()
             if current != settings["revision"]:
                 run(
                     [
-                        "git",
+                        git,
                         "-C",
                         str(checkout),
                         "fetch",
@@ -80,16 +86,16 @@ def main() -> None:
                         settings["revision"],
                     ]
                 )
-                run(["git", "-C", str(checkout), "checkout", settings["revision"]])
+                run([git, "-C", str(checkout), "checkout", settings["revision"]])
             applied = subprocess.run(
-                ["git", "-C", str(checkout), "apply", "--reverse", "--check", str(patch)],
+                [git, "-C", str(checkout), "apply", "--reverse", "--check", str(patch)],
                 capture_output=True,
             )
             if applied.returncode:
-                run(["git", "-C", str(checkout), "apply", str(patch)])
+                run([git, "-C", str(checkout), "apply", str(patch)])
         align = runtime / "align"
         python = align / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-        run([uv, "venv", "--allow-existing", "--python", "3.12", str(align)])
+        run([uv, "venv", "--allow-existing", "--python", interpreter, str(align)])
         packages = settings["packages"]
         torch_index = os.environ.get("KARAOKE_TORCH_INDEX_URL")
         if torch_index:

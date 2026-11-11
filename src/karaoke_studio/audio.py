@@ -87,15 +87,25 @@ def prepare_audio(
     )
 
 
-def waveform_peaks(wav_path: Path, points: int = 1800) -> list[float]:
+def waveform_peaks(
+    wav_path: Path, points: int = 1800, start_ms: int = 0, end_ms: int | None = None
+) -> list[float]:
     with wave.open(str(wav_path), "rb") as handle:
         if handle.getnchannels() != 1 or handle.getsampwidth() != 2:
             raise ValueError("waveform generation expects 16-bit mono WAV")
-        frames = handle.readframes(handle.getnframes())
+        rate = handle.getframerate()
+        start = min(handle.getnframes(), max(0, round(start_ms * rate / 1000)))
+        end = (
+            handle.getnframes()
+            if end_ms is None
+            else min(handle.getnframes(), max(start, round(end_ms * rate / 1000)))
+        )
+        handle.setpos(start)
+        frames = handle.readframes(end - start)
     if not frames:
         return []
     samples = memoryview(frames).cast("h")
-    window = max(1, len(samples) // points)
+    window = max(1, (len(samples) + points - 1) // points)
     return [
         round(max(abs(value) for value in samples[index : index + window]) / 32768, 4)
         for index in range(0, len(samples), window)

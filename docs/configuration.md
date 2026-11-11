@@ -12,7 +12,7 @@
 | `appearance` | `main_size`, `width_limit`, `ruby_ratio`, `ruby_rise_ratio` | 正文字号、最大宽度、注音大小比例和抬升比例 |
 | `appearance` | `bold`, `outline` | 日文加粗与描边宽度 |
 | `appearance` | `title_size`, `title_y`, `title_outline` | 标题字号、垂直坐标与描边 |
-| `appearance` | `chinese_size`, `chinese_outline`, `chinese_glow`, `chinese_blur` | 中文字号、文字边线、团体色柔光与模糊 |
+| `appearance` | `chinese_size`, `chinese_outline` | 中文字幕字号和描边宽度，默认与标题一致 |
 | `layout` | `canvas_width`, `canvas_height`, `margin_x`, `top_y`, `bottom_y` | 逻辑画布、水平边距与两行歌词中心 |
 | `production` | `default_theme` | 默认团体主题键名 |
 | `encoder` | `video_codec`, `preset`, `crf`, `pixel_format`, `audio_codec`, `audio_bitrate`, `movflags` | FFmpeg 编码设置 |
@@ -22,7 +22,7 @@
 
 颜色使用 `#RRGGBB`。团体最小配置为 `label` 与 `sung`，文字默认白色，未唱边线默认黑色，已唱边线默认白色。标题默认继承 `sung`。
 
-环境变量 `KARAOKE_FFMPEG`、`KARAOKE_FFPROBE`、`KARAOKE_YOHANE_PYTHON` 可覆盖工具路径。`KARAOKE_HOME` 指定源码安装的运行根目录。设置通过启动时加载；重新运行命令或浏览器服务会应用更新。
+环境变量 `KARAOKE_FFMPEG`、`KARAOKE_FFPROBE`、`KARAOKE_YOHANE_PYTHON` 提供安装器记录的工具路径，显式工具配置优先。`KARAOKE_HOME` 指定源码安装的运行根目录。设置通过启动时加载；重新运行命令或浏览器服务会应用更新。
 
 模型配置用于新建项目。已有项目保留其模型 ID 与 revision；制作参数和对齐记录随项目保存。
 

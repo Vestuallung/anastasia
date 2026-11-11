@@ -4,12 +4,6 @@ import { afterEach, vi } from "vitest";
 
 afterEach(() => cleanup());
 
-vi.mock("jassub", () => ({
-  default: class MockJassub {
-    destroy() {}
-  },
-}));
-
 vi.stubGlobal("PointerEvent", MouseEvent);
 
 Object.defineProperty(HTMLMediaElement.prototype, "play", {
@@ -25,3 +19,7 @@ Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
   configurable: true,
   value: vi.fn(),
 });
+
+class ResizeObserverMock {constructor(private cb:ResizeObserverCallback){} observe(target:Element){this.cb([{target,contentRect:{width:900,height:400}} as unknown as ResizeObserverEntry],this as unknown as ResizeObserver)} unobserve(){} disconnect(){}}
+vi.stubGlobal('ResizeObserver',ResizeObserverMock);
+Object.defineProperty(HTMLCanvasElement.prototype,'getContext',{configurable:true,value:()=>({scale(){},translate(){},strokeText(){},fillText(){},save(){},beginPath(){},rect(){},clip(){},restore(){},fillRect(){},arc(){},fill(){},stroke(){}})});

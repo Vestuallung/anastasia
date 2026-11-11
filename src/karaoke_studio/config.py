@@ -60,7 +60,8 @@ def configured_path(value: str) -> Path:
 
 
 def tool_path(name: str) -> str:
-    value = os.environ.get(f"KARAOKE_{name.upper()}", section("tools")[name])
+    configured = section("tools")[name]
+    value = configured if configured != name else os.environ.get(f"KARAOKE_{name.upper()}", name)
     found = shutil.which(value)
     if "/" in value or "\\" in value:
         return found or str(configured_path(value))
@@ -68,7 +69,7 @@ def tool_path(name: str) -> str:
 
 
 def yohane_python() -> Path:
-    value = os.environ.get("KARAOKE_YOHANE_PYTHON") or section("runtime")["yohane_python"]
+    value = section("runtime")["yohane_python"] or os.environ.get("KARAOKE_YOHANE_PYTHON")
     if value:
         return configured_path(value)
     root = Path(os.environ.get("KARAOKE_HOME", config_directory())) / ".runtime/align"

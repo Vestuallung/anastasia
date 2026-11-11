@@ -24,7 +24,7 @@ export function ImportPanel({ onImported }: { onImported: (project: ProjectPaylo
     setError("");
     try {
       let project = await apiFetch<ProjectPayload>("/api/import", { method: "POST", body: form });
-      if (audio) project = await apiFetch<ProjectPayload>("/api/prepare", { method: "POST" });
+      if (audio || video) project = await apiFetch<ProjectPayload>("/api/prepare", { method: "POST" });
       onImported(project);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -36,16 +36,15 @@ export function ImportPanel({ onImported }: { onImported: (project: ProjectPaylo
   return (
     <main className="import-workspace">
       <div className="import-card">
-        <span className="eyebrow">新建本地项目</span>
-        <h1>导入歌词和音频，在同一处完成对齐与调整。</h1>
-        <p>标准假名语法为 <code>他人《ひと》</code>；普通圆括号会保留显示并参与演唱。</p>
+        <span className="eyebrow">Karaoke Studio</span>
+        <h1>新建项目</h1>
         <div className="drop-grid">
-          <label className={lyrics ? "file-drop selected" : "file-drop"}><FileText /><strong>{lyrics?.name ?? "选择 TXT、LRC 或 ASS"}</strong><span>歌词与行内假名标注</span><input type="file" accept=".txt,.lrc,.ass" onChange={(event) => setLyrics(event.target.files?.[0] ?? null)} /></label>
-          <label className={video ? "file-drop selected" : "file-drop"}><Video /><strong>{video?.name ?? "选择预览视频"}</strong><span>作为字幕实时预览画面</span><input type="file" accept="video/*" onChange={(event) => setVideo(event.target.files?.[0] ?? null)} /></label>
-          <label className={audio ? "file-drop selected" : "file-drop"}><FileAudio /><strong>{audio?.name ?? "选择对齐音频"}</strong><span>播放并转换为 16 kHz 单声道</span><input type="file" accept="audio/*,video/*" onChange={(event) => setAudio(event.target.files?.[0] ?? null)} /></label>
+          <label className={lyrics ? "file-drop selected" : "file-drop"}><FileText /><strong>{lyrics?.name ?? "歌词"}</strong><span>TXT · LRC · ASS</span><input aria-label="歌词文件" type="file" accept=".txt,.lrc,.ass" onChange={(event) => setLyrics(event.target.files?.[0] ?? null)} /></label>
+          <label className={video ? "file-drop selected" : "file-drop"}><Video /><strong>{video?.name ?? "视频"}</strong><input aria-label="视频文件" type="file" accept="video/*" onChange={(event) => setVideo(event.target.files?.[0] ?? null)} /></label>
+          <label className={audio ? "file-drop selected" : "file-drop"}><FileAudio /><strong>{audio?.name ?? "独立音轨（可选）"}</strong><input aria-label="音轨文件" type="file" accept="audio/*,video/*" onChange={(event) => setAudio(event.target.files?.[0] ?? null)} /></label>
         </div>
-        <label className="check-row"><input type="checkbox" checked={legacy} onChange={(event) => setLegacy(event.target.checked)} /> 将旧式 漢字(かんじ) 解析为假名标注</label>
-        <label className="check-row"><input type="checkbox" checked={preserve} onChange={(event) => setPreserve(event.target.checked)} /> 保留结构有效的 ASS 卡拉 OK 时间</label>
+        <details><summary>导入选项</summary><label className="check-row"><input type="checkbox" checked={legacy} onChange={(event) => setLegacy(event.target.checked)} /> 识别 漢字(かんじ) 注音</label>
+        <label className="check-row"><input type="checkbox" checked={preserve} onChange={(event) => setPreserve(event.target.checked)} /> 保留 ASS 时间</label></details>
         {error && <div className="error-banner">{error}</div>}
         <button className="primary import-button" disabled={!lyrics || busy} onClick={submit}><Upload size={16} />{busy ? "正在本地导入……" : "导入项目"}</button>
       </div>

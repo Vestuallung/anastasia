@@ -81,7 +81,7 @@ def test_render_job_resolves_all_relative_media_paths(tmp_path: Path) -> None:
         (
             False,
             True,
-            ("on_vocal_karaoke", "on_vocal_karaoke_zh", "on_vocal_zh_only"),
+            ("on_vocal_karaoke", "on_vocal_karaoke_zh"),
         ),
         (
             True,
@@ -90,7 +90,6 @@ def test_render_job_resolves_all_relative_media_paths(tmp_path: Path) -> None:
                 "on_vocal_karaoke",
                 "off_vocal_karaoke",
                 "on_vocal_karaoke_zh",
-                "on_vocal_zh_only",
             ),
         ),
     ],

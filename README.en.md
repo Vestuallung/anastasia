@@ -18,7 +18,22 @@ Turn lyrics into subtitles that sing.
 
 ---
 
-Turn **video + on-vocal audio + line-by-line lyrics** into Japanese karaoke with furigana, continuous color sweeps and group themes. The CLI runs the production pipeline; the browser timeline lets you adjust readings and vocal timing.
+Turn a video, line-by-line lyrics, and optional separate vocals into an editable karaoke project. The studio handles setup, trimming, AI alignment, timing edits, and video export.
+
+## Make your first video
+
+1. Extract the release. Double-click `Start-Studio-11月7日.command` on macOS or `Start-Studio-11月7日.cmd` on Windows. On Linux, run `sh Start-Studio-11月7日.sh` in the extracted folder. The first launch prepares the environment and opens the project library.
+2. Use the gear on the home page to check the environment and download the alignment model. The same panel manages fonts, group colors, and custom models.
+3. Choose **New production** and select the video and lyrics. A separate vocal track is optional when the video already has vocals. Enter a start and end time. A blank end uses the end of the video.
+4. Choose **Align and edit** to preview lyrics, drag character or reading boundaries, and adjust playback speed, looping, or blackout. Export the selected versions from the editor, or choose **Create video directly** in the new production form.
+
+Use **视频码率** (video bitrate) in the new production form or editor to choose a target bitrate for the main export. Choose the default quality, a preset, or a custom value in Mbps. Target bitrate mode uses H.264 hardware encoding on macOS when available and software encoding otherwise. Use `--video-bitrate 10.5` with `produce`, `specialize`, or `resume` on the command line.
+
+For a strict 500 MB limit, also select **同时生成上传版（500 MB 以内）**. To compress an existing export, run `karaoke compress INPUT.mp4 --output UPLOAD.mp4 --max-mb 500`.
+
+Each lyric line keeps its original boundaries. Use `漢字《かな》` for explicit readings. For bilingual lyrics, alternate `日文：…` and `中文：…`. Each Chinese line follows the timing of its Japanese partner. Blank lines mark sections. The project library retains job progress and results. **Run from scratch** uses current settings, and **Continue from checkpoint** reuses valid stages and video segments.
+
+After setup, Apple Silicon macOS users can open `KaraokeStudio-11月7日.app` from the same folder. On Windows, run `Start-Studio-11月7日.cmd -DataDir D:\KaraokeStudio` from the extracted folder to choose the drive for the environment, models, and projects.
 
 ## From lyrics to video
 
@@ -28,9 +43,9 @@ Turn **video + on-vocal audio + line-by-line lyrics** into Japanese karaoke with
 | --- | --- |
 | Lyrics | TXT, LRC and ASS; explicit `漢字《かな》` readings; original line breaks, spaces and punctuation |
 | Alignment | Per-unit timing from on-vocal audio and romanized lyrics, with raw results preserved |
-| Karaoke | Continuous sweeps for lyrics and ruby text; 96px default; real-font width measurement |
+| Karaoke | Continuous sweeps, three-dot cues, hiragana ruby for katakana, and real-font width measurement at 96px by default |
 | Themes | Nogizaka46, Hinatazaka46, Sakurazaka46, Keyakizaka46, ≠ME and custom groups |
-| Media | Time-range trimming, separate audio, proportional scaling and centered padding |
+| Media | Time-range trimming, separate audio, proportional scaling, centered padding, and timed blackout regions |
 | Variants | On-vocal, off-vocal, Japanese/Chinese and Chinese-only videos |
 | Editor | Waveform, mora dragging, line shifts, reading edits, undo and redo |
 | Automation | One-command production, stage reuse, JSON jobs and machine-readable results |
@@ -135,18 +150,17 @@ Resume, recolor or open the editor:
 
 ```bash
 ./karaoke-local resume projects/song
-./karaoke-local resume projects/song --color "#00B379" --force-render
+./karaoke-local resume projects/song --color "#00B379" --reuse --force-render
 ./karaoke-local serve projects/song
 ```
 
-On Windows, replace `./karaoke-local` with `.\karaoke-local.ps1`. `serve` opens the timeline editor; `resume` reuses stages according to input changes. Width reports list every line needing revised breaks so you can edit the input and resume.
+On Windows, replace `./karaoke-local` with `.\karaoke-local.ps1`. `serve` opens the timeline editor; `resume` reruns from scratch by default, and `--reuse` reuses valid stages. Width reports list every line needing revised breaks so you can edit the input and resume.
 
 | Output | Contents |
 | --- | --- |
 | `on_vocal_karaoke.mp4` | Japanese on-vocal karaoke |
 | `off_vocal_karaoke.mp4` | Japanese off-vocal karaoke |
 | `on_vocal_karaoke_zh.mp4` | Japanese/Chinese on-vocal karaoke |
-| `on_vocal_zh_only.mp4` | Chinese-only on-vocal subtitles |
 | `project.karaoke.json` and ASS | Editable project and subtitles |
 
 ## Configuration, groups and models
@@ -183,7 +197,7 @@ See the [configuration reference](docs/configuration.md) for all fields. `script
 ./karaoke-local render-job examples/render-job.json
 ```
 
-The editor uses FastAPI REST and SSE. After starting `serve`, open the service’s `/docs` for request schemas. The token in the launch URL can be sent as `X-Karaoke-Token`.
+React, TypeScript, and Canvas draw the structured preview. FastAPI provides the local API and SSE job progress, Yohane and PyTorch align lyrics, and FFmpeg with libass exports MP4. See [schemas](schemas/) for the project and job formats.
 
 | Endpoint | Purpose |
 | --- | --- |

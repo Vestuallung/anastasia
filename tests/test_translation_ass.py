@@ -71,9 +71,9 @@ def test_translation_inherits_source_times_and_generates_two_variants(tmp_path: 
     assert report.lines == 1
     for output in (combined, only):
         text = output.read_text(encoding="utf-8")
-        assert "Dialogue: 10,0:00:01.00,0:00:03.00,ChineseGlow" in text
+        assert "ChineseGlow" not in text
         assert "Dialogue: 11,0:00:01.00,0:00:03.00,ChineseText" in text
-        assert "\\fad(160,160)" in text
+        assert r"\3c&H00FFFFFF&\bord3.20" in text
         assert "日常生活" in text
         assert "0:00:04.00,0:00:05.00,Chinese" not in text
     assert "Style: Outline" in combined.read_text(encoding="utf-8")

@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import tool_path
 from .models import (
     DEFAULT_MODEL_ID,
     DEFAULT_MODEL_REVISION,
@@ -90,8 +89,8 @@ def inspect_project(project: KaraokeProject) -> list[StructuralIssue]:
 
 
 def doctor(project_dir: Path | None = None) -> dict[str, object]:
-    ffmpeg = shutil.which(tool_path("ffmpeg"))
-    ffprobe = shutil.which(tool_path("ffprobe"))
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
     checks: dict[str, object] = {
         "python": {"ok": sys.version_info >= (3, 12), "version": sys.version.split()[0]},
         "ffmpeg": {"ok": bool(ffmpeg), "path": ffmpeg},

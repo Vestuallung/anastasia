@@ -42,10 +42,11 @@ THEMES = _load_themes()
 
 
 def get_theme(name: str) -> KaraokeTheme:
+    themes = _load_themes()
     try:
-        return THEMES[name]
+        return themes[name]
     except KeyError as exc:
-        raise ValueError(f"Unknown theme: {name}. Available themes: {', '.join(THEMES)}") from exc
+        raise ValueError(f"Unknown theme: {name}. Available themes: {', '.join(themes)}") from exc
 
 
 def resolve_theme(name: str, colors: dict[str, str] | None = None) -> KaraokeTheme:

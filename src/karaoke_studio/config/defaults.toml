@@ -36,9 +36,9 @@ title_size = 48
 title_y = 96
 title_outline = 3.2
 chinese_size = 48
-chinese_outline = 1.6
-chinese_glow = 6.0
-chinese_blur = 4.0
+chinese_outline = 3.2
+chinese_glow = 0.0
+chinese_blur = 0.0
 
 [layout]
 canvas_width = 1920
@@ -52,7 +52,7 @@ default_theme = "nogizaka46"
 
 [encoder]
 video_codec = "libx264"
-preset = "medium"
+preset = "veryfast"
 crf = 18
 pixel_format = "yuv420p"
 audio_codec = "aac"

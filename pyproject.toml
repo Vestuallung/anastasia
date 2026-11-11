@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "karaoke-studio"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first Japanese karaoke alignment and editing studio"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -50,6 +50,7 @@ exclude = [
   "/web/playwright.config.js",
   "/web/playwright.config.d.ts",
   "/.runtime",
+  "/*.app",
   "/.claude",
   "/projects",
   "/models",

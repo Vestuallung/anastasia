@@ -32,8 +32,8 @@ test-results/
 *.m4a
 *.mp4
 *.mkv
-!web/src/preview-background.mp4
 .claude/
 *.bin
 *.onnx
 *.gguf
+/KaraokeStudio-*.app/

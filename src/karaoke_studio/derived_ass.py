@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -25,6 +26,8 @@ ZH_FONT_NAME = FONTS["chinese_family"]
 CANONICAL_W, CANONICAL_H = LAYOUT["canvas_width"], LAYOUT["canvas_height"]
 MAIN_FONT, USABLE_W = APPEARANCE["main_size"], APPEARANCE["width_limit"]
 KANA_FONT_RATIO, KANA_RISE_RATIO = APPEARANCE["ruby_ratio"], APPEARANCE["ruby_rise_ratio"]
+COUNTDOWN_RADIUS = MAIN_FONT * 38 / 96
+COUNTDOWN_SPACING = COUNTDOWN_RADIUS * 2.5
 CHINESE_FONT = APPEARANCE["chinese_size"]
 TITLE_FONT = APPEARANCE["title_size"]
 BOLD = int(APPEARANCE["bold"])
@@ -70,13 +73,16 @@ class KaraokePlacement:
 
 @dataclass(frozen=True)
 class TranslationPlacement:
-    preset: Literal["bottom_left", "bottom_center", "bottom_right", "custom"] = "bottom_left"
+    preset: Literal["top_left", "bottom_left", "bottom_center", "bottom_right", "custom"] = (
+        "top_left"
+    )
     alignment: int | None = None
     x: float | None = None
     y: float | None = None
 
     def resolved(self) -> tuple[int, float, float]:
         presets = {
+            "top_left": (7, 24.0, APPEARANCE["title_y"]),
             "bottom_left": (1, 110.0, 1010.0),
             "bottom_center": (2, 960.0, 1010.0),
             "bottom_right": (3, 1810.0, 1010.0),
@@ -114,6 +120,9 @@ class DerivedAssReport:
     output: Path
     play_res_x: int = CANONICAL_W
     play_res_y: int = CANONICAL_H
+    countdown_cues: int = 0
+    countdown_skipped: int = 0
+    katakana_ruby_added: int = 0
 
 
 @dataclass(frozen=True)
@@ -193,7 +202,14 @@ def tokenize_ass(path: Path) -> list[dict]:
             raise DerivedAssError(
                 f"Dialogue 结束时间必须晚于开始时间: {record['Start']} - {record['End']}"
             )
-        result.append({"start": start, "end": end, "text_raw": raw})
+        result.append(
+            {
+                "start": start,
+                "end": end,
+                "text_raw": raw,
+                "paragraph_start": record.get("Name") == "paragraph-start",
+            }
+        )
     if not result:
         raise DerivedAssError("源 ASS 中没有可用的 Effect=karaoke Dialogue")
     return result
@@ -277,7 +293,13 @@ def rebuild_dialogues(raw: list[dict]) -> list[dict]:
         if not any(token["type"] == "main" and token["text"] for token in tokens):
             continue
         result.append(
-            {"i": len(result), "start": source["start"], "end": source["end"], "tokens": tokens}
+            {
+                "i": len(result),
+                "start": source["start"],
+                "end": source["end"],
+                "tokens": tokens,
+                "paragraph_start": source.get("paragraph_start", False),
+            }
         )
     if not result:
         raise DerivedAssError("源 ASS 中只有空歌词行")
@@ -292,6 +314,36 @@ def visible_text(dialogue: dict) -> str:
         output.append(token["text"])
         current_line = token["line"]
     return "".join(output)
+
+
+def _katakana_ruby(tokens: list[dict]) -> tuple[list[dict], int]:
+    """Add display-only hiragana; preserve manual ruby and every timing span."""
+    result, added = [], 0
+    previous_katakana = False
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        stop = index + 1
+        while stop < len(tokens) and tokens[stop]["type"] != "main":
+            stop += 1
+        group = tokens[index:stop]
+        text = unicodedata.normalize("NFKC", token["text"])
+        katakana = bool(text) and all("ァ" <= c <= "ヺ" or c in "ーヽヾ" for c in text)
+        katakana = katakana and (any(c != "ー" for c in text) or previous_katakana)
+        manual = any(t["type"] == "kana" and t["text"] for t in group)
+        result.extend(group)
+        if katakana and not manual:
+            reading = "".join(
+                chr(ord(c) - 0x60)
+                if "ァ" <= c <= "ヶ" or c in "ヽヾ"
+                else {"ヷ": "わ゙", "ヸ": "ゐ゙", "ヹ": "ゑ゙", "ヺ": "を゙"}.get(c, c)
+                for c in text
+            )
+            result.append({**token, "type": "kana", "text": reading})
+            added += 1
+        previous_katakana = katakana
+        index = stop
+    return result, added
 
 
 def compute_display_windows(dialogues: list[dict], audio_end: float) -> list[dict]:
@@ -372,6 +424,21 @@ def assign_x_positions(layout: dict, side: str, margin: float) -> None:
             x += char["slot_w"]
 
 
+def _main_sweep_segments(token: dict, char: dict) -> list[tuple[float, float]] | None:
+    readings = [kana for kana in char["kana_tokens"] if kana["text"]]
+    if len(readings) < 2:
+        return None
+    # Empty continuations sustain the previous reading; they do not allocate
+    # an extra share of the glyph's width.
+    return [
+        (
+            token["start"] if index == 0 else kana["start"],
+            readings[index + 1]["start"] if index + 1 < len(readings) else token["end"],
+        )
+        for index, kana in enumerate(readings)
+    ]
+
+
 def _token_events(
     text: str,
     font_size: int,
@@ -385,6 +452,7 @@ def _token_events(
     theme: KaraokeTheme,
     canvas: Canvas,
     time_offset: float,
+    sweep_segments: list[tuple[float, float]] | None = None,
 ) -> list[str]:
     # Complementary clips remove the unsung black border as the white border advances.
     fs = canvas.size(font_size)
@@ -405,21 +473,29 @@ def _token_events(
     white = f"\\1c{to_bgr_ass(theme.unsung_fill)}\\3c{to_bgr_ass(theme.unsung_outline)}"
     colored = f"\\1c{sung}\\3c{to_bgr_ass(theme.sung_outline)}"
     emit(display_start, min(token_start, display_end), white, "Outline")
-    end = min(token_end, display_end)
-    if end > token_start:
-        duration = round((end - token_start) * 1000)
+    # A ruby continuation owns an equal part of the base glyph's sweep, while
+    # retaining its original duration. All phases draw the same whole glyph;
+    # only the clip boundary advances, so its position never changes.
+    segments = sweep_segments or [(token_start, token_end)]
+    for index, (segment_start, segment_end) in enumerate(segments):
+        end = min(segment_end, display_end)
+        if end <= segment_start:
+            continue
+        phase_left = xl + (xr - xl) * index / len(segments)
+        phase_right = xl + (xr - xl) * (index + 1) / len(segments)
+        duration = round((segment_end - segment_start) * 1000)
         emit(
-            token_start,
+            segment_start,
             end,
             white
-            + f"\\clip({xl:.2f},0,{canvas.width},{canvas.height})\\t(0,{duration},\\clip({xr:.2f},0,{canvas.width},{canvas.height}))",
+            + f"\\clip({phase_left:.2f},0,{canvas.width},{canvas.height})\\t(0,{duration},\\clip({phase_right:.2f},0,{canvas.width},{canvas.height}))",
             "Outline",
         )
         emit(
-            token_start,
+            segment_start,
             end,
             colored
-            + f"\\clip(0,0,{xl:.2f},{canvas.height})\\t(0,{duration},\\clip(0,0,{xr:.2f},{canvas.height}))",
+            + f"\\clip(0,0,{phase_left:.2f},{canvas.height})\\t(0,{duration},\\clip(0,0,{phase_right:.2f},{canvas.height}))",
             "Fill",
         )
     emit(max(token_end, display_start), display_end, colored, "Fill")
@@ -447,6 +523,66 @@ def _escape_ass_text(text: str) -> str:
     return text.replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}").replace("\n", r"\N")
 
 
+def _prepare_countdowns(dialogues: list[dict], offset: float) -> tuple[set[int], int]:
+    selected, skipped = set(), 0
+    for index, line in enumerate(dialogues):
+        previous_end = max((d["end"] for d in dialogues[:index]), default=0)
+        candidate = index == 0 or line["paragraph_start"] or line["start"] - previous_end >= 8
+        if not candidate:
+            continue
+        start = line["start"] - 3
+        occupied = index >= 2 and dialogues[index - 2]["display_end"] > start + 1e-6
+        if start + offset < -1e-6 or (index > 0 and start < previous_end - 1e-6) or occupied:
+            skipped += 1
+            continue
+        line["display_start"] = start
+        if index > 0:
+            previous = dialogues[index - 1]
+            previous["display_end"] = min(previous["display_end"], start)
+        selected.add(index)
+    return selected, skipped
+
+
+def _countdown_anchor(layout: dict, first_y: float) -> tuple[float, float]:
+    first_row = [char for char in layout["main_chars"] if char["line"] == 0]
+    left = min(char["main_left"] for char in first_row)
+    left = min(left, CANONICAL_W - 2 * (COUNTDOWN_RADIUS + COUNTDOWN_SPACING) - 2)
+    lyric_top = first_y - MAIN_FONT / 2
+    if any(char["kana_text"] for char in first_row):
+        lyric_top = first_y - round(MAIN_FONT * KANA_RISE_RATIO) - layout["kana_size"] / 2
+    return left, lyric_top - COUNTDOWN_RADIUS - 12
+
+
+def _countdown_events(
+    start: float, left: float, y: float, canvas: Canvas, theme: KaraokeTheme, offset: float
+) -> list[str]:
+    # ASS vector circles avoid relying on the font's solid-circle glyph.
+    radius = canvas.size(COUNTDOWN_RADIUS)
+    spacing = canvas.size(COUNTDOWN_SPACING)
+    x, y = canvas.x(left), canvas.y(y) - radius
+    k = radius * 0.55228475
+    paths = []
+    for index in range(3):
+        cx, cy = index * spacing + radius, radius
+        paths.append(
+            f"m {cx + radius:.3f} {cy:.3f} b {cx + radius:.3f} {cy + k:.3f} "
+            f"{cx + k:.3f} {cy + radius:.3f} {cx:.3f} {cy + radius:.3f} "
+            f"{cx - k:.3f} {cy + radius:.3f} {cx - radius:.3f} {cy + k:.3f} {cx - radius:.3f} {cy:.3f} "
+            f"{cx - radius:.3f} {cy - k:.3f} {cx - k:.3f} {cy - radius:.3f} {cx:.3f} {cy - radius:.3f} "
+            f"{cx + k:.3f} {cy - radius:.3f} {cx + radius:.3f} {cy - k:.3f} {cx + radius:.3f} {cy:.3f}"
+        )
+    tags = (
+        f"\\an7\\pos({x:.2f},{y:.2f})\\p1\\bord{canvas.size(2):.2f}\\shad0"
+        f"\\1c{to_bgr_ass(theme.sung)}\\3c{to_bgr_ass(theme.sung_outline)}"
+    )
+    return [
+        f"Dialogue: 8,{fmt_ass_time(start - remaining + offset)},"
+        f"{fmt_ass_time(start - remaining + 1 + offset)},Countdown,,0,0,0,,"
+        f"{{{tags}}}{' '.join(paths[:remaining])}"
+        for remaining in (3, 2, 1)
+    ]
+
+
 def generate_derived_ass(
     source: Path,
     output: Path,
@@ -457,6 +593,8 @@ def generate_derived_ass(
     canvas: Canvas | None = None,
     placement: KaraokePlacement | None = None,
     subtitle_offset: float = 0.0,
+    countdown: bool = False,
+    katakana_ruby: bool = False,
 ) -> DerivedAssReport:
     if not source.is_file():
         raise DerivedAssError(f"源 ASS 不存在: {source}")
@@ -466,11 +604,19 @@ def generate_derived_ass(
         raise DerivedAssError("audio_end 必须大于 0")
     canvas, placement = canvas or parse_source_play_res(source), placement or KaraokePlacement()
     dialogues = rebuild_dialogues(tokenize_ass(source))
+    katakana_ruby_added = 0
+    if katakana_ruby:
+        for dialogue in dialogues:
+            dialogue["tokens"], added = _katakana_ruby(dialogue["tokens"])
+            katakana_ruby_added += added
     if dialogues[-1]["end"] > audio_end + 0.01:
         raise DerivedAssError(
             f"最后一句结束时间 {fmt_ass_time(dialogues[-1]['end'])} 超过音频结束时间 {fmt_ass_time(audio_end)}"
         )
     compute_display_windows(dialogues, audio_end)
+    countdown_indices, countdown_skipped = (
+        _prepare_countdowns(dialogues, subtitle_offset) if countdown else (set(), 0)
+    )
     measurer, layouts, overwide, max_width = FontMeasurer(), [], [], 0
     for dialogue in dialogues:
         layout = compute_sentence_layout(measurer, dialogue)
@@ -494,10 +640,23 @@ def generate_derived_ass(
     for index, (dialogue, layout) in enumerate(zip(dialogues, layouts, strict=True)):
         base_y = placement.top_y if index % 2 == 0 else placement.bottom_y
         split = len({char["line"] for char in layout["main_chars"]}) > 1
+        first_y = base_y - (55 if split else 0)
+        if index in countdown_indices:
+            left, dot_y = _countdown_anchor(layout, first_y)
+            events.extend(
+                _countdown_events(
+                    dialogue["start"],
+                    left,
+                    dot_y,
+                    canvas,
+                    theme,
+                    subtitle_offset,
+                )
+            )
         mains = [token for token in dialogue["tokens"] if token["type"] == "main"]
         kanas = [token for token in dialogue["tokens"] if token["type"] == "kana"]
         for token, char in zip(mains, layout["main_chars"], strict=True):
-            y = base_y + char["line"] * 110 - (55 if split else 0)
+            y = first_y + char["line"] * 110
             events.extend(
                 _token_events(
                     char["text"],
@@ -512,14 +671,14 @@ def generate_derived_ass(
                     theme,
                     canvas,
                     subtitle_offset,
+                    sweep_segments=_main_sweep_segments(token, char),
                 )
             )
         positioned_kanas = [kana for char in layout["main_chars"] for kana in char["kana_tokens"]]
         for token, kana in zip(kanas, positioned_kanas, strict=True):
             y = (
-                base_y
+                first_y
                 + token["line"] * 110
-                - (55 if split else 0)
                 - round(MAIN_FONT * KANA_RISE_RATIO)
             )
             events.extend(
@@ -557,9 +716,10 @@ def generate_derived_ass(
         "",
         "[V4+ Styles]",
         style_format,
-        f"Style: Outline,{FONT_NAME},{canvas.size(MAIN_FONT):.2f},&H00FFFFFF,&H00FFFFFF,{outline},&H80000000&,0,0,0,0,100,100,{canvas.size(1):.2f},0,1,{canvas.size(APPEARANCE['outline']):.2f},0,5,0,0,0,1",
+        f"Style: Outline,{FONT_NAME},{canvas.size(MAIN_FONT):.2f},&H00FFFFFF,&H00FFFFFF,{outline},&H80000000&,0,0,0,0,100,100,{canvas.size(1):.2f},0,1,{canvas.size(1.6):.2f},0,5,0,0,0,1",
         f"Style: Fill,{FONT_NAME},{canvas.size(MAIN_FONT):.2f},&H00FFFFFF&,&H00FFFFFF&,&H00FFFFFF&,&H00FFFFFF&,0,0,0,0,100,100,{canvas.size(1):.2f},0,1,0,0,5,0,0,0,1",
         f"Style: Title,{FONT_NAME},{canvas.size(TITLE_FONT):.2f},{sung},{sung},&H00FFFFFF&,&H00000000&,0,0,0,0,100,100,0,0,1,{canvas.size(APPEARANCE['title_outline']):.2f},0,9,0,0,0,1",
+        f"Style: Countdown,{FONT_NAME},20,{sung},{sung},&H00FFFFFF&,&H00000000&,0,0,0,0,100,100,0,0,1,2,0,7,0,0,0,1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -575,7 +735,54 @@ def generate_derived_ass(
         output,
         canvas.width,
         canvas.height,
+        len(countdown_indices),
+        countdown_skipped,
+        katakana_ruby_added,
     )
+
+
+def _load_translation(sidecar: Path) -> dict:
+    try:
+        raw = sidecar.read_text(encoding="utf-8-sig")
+        if sidecar.suffix.lower() == ".json":
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise DerivedAssError("中文字幕 JSON 顶层必须为对象")
+            return payload
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DerivedAssError(f"无法读取中文字幕 sidecar: {sidecar}: {exc}") from exc
+    entries = []
+    pending = None
+    blank_count = paragraph_before = 0
+    for number, line in enumerate(raw.splitlines(), 1):
+        if not line.strip():
+            if pending is None:
+                blank_count += 1
+            continue
+        label = "日文" if pending is None else "中文"
+        match = re.match(rf"^{label}[：:]", line)
+        if match is None:
+            raise DerivedAssError(f"中日对照文本第 {number} 行应以 {label}： 开头")
+        value = line[match.end() :]
+        if value.startswith(" "):
+            value = value[1:]
+        if pending is None:
+            pending = value
+            paragraph_before, blank_count = blank_count, 0
+        else:
+            entries.append(
+                {
+                    "index": len(entries),
+                    "source_text": re.sub(r"《[^》]*》", "", pending),
+                    "annotated_source_text": pending,
+                    "text": value,
+                    "paragraph_before": paragraph_before,
+                }
+            )
+            pending = None
+    if pending is not None:
+        raise DerivedAssError("中日对照文本最后一句日文缺少中文行")
+    return {"schema_version": 1, "language": "zh-Hans", "lines": entries}
 
 
 def _translation_events(
@@ -587,10 +794,7 @@ def _translation_events(
     placement: TranslationPlacement,
     subtitle_offset: float,
 ) -> tuple[list[str], int, int]:
-    try:
-        payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise DerivedAssError(f"无法读取中文字幕 sidecar: {sidecar}: {exc}") from exc
+    payload = _load_translation(sidecar)
     if payload.get("schema_version") != 1 or payload.get("language") != "zh-Hans":
         raise DerivedAssError("中文字幕 sidecar 必须为 schema_version=1、language=zh-Hans")
     dialogues = rebuild_dialogues(tokenize_ass(source))
@@ -629,16 +833,14 @@ def _translation_events(
     if overwide:
         raise OverwideError(overwide)
     alignment, x, y = placement.resolved()
-    glow, events = to_bgr_ass(theme.sung), []
-    for dialogue, translated, end in accepted:
-        fade = min(160, round((dialogue["end"] - dialogue["start"]) * 500))
-        common = f"\\an{alignment}\\pos({canvas.x(x):.2f},{canvas.y(y):.2f})\\fs{canvas.size(CHINESE_FONT):.2f}\\fad({fade},{fade})"
+    color, events = to_bgr_ass(theme.title_fill or theme.sung), []
+    for i, (dialogue, translated, end) in enumerate(accepted):
+        if i + 1 < len(accepted):
+            end = min(end, accepted[i + 1][0]["start"])
+        common = f"\\an{alignment}\\pos({canvas.x(x):.2f},{canvas.y(y):.2f})\\fs{canvas.size(CHINESE_FONT):.2f}"
         text = _escape_ass_text(translated)
-        events.extend(
-            [
-                f"Dialogue: 10,{fmt_ass_time(dialogue['start'] + subtitle_offset)},{fmt_ass_time(end + subtitle_offset)},ChineseGlow,,0,0,0,,{{{common}\\1a&HFF&\\3c{glow}\\bord{canvas.size(APPEARANCE['chinese_glow']):.2f}\\blur{canvas.size(APPEARANCE['chinese_blur']):.2f}\\shad0}}{text}",
-                f"Dialogue: 11,{fmt_ass_time(dialogue['start'] + subtitle_offset)},{fmt_ass_time(end + subtitle_offset)},ChineseText,,0,0,0,,{{{common}\\1c&H00FFFFFF&\\3c&H00000000&\\bord{canvas.size(APPEARANCE['chinese_outline']):.2f}\\shad0}}{text}",
-            ]
+        events.append(
+            f"Dialogue: 11,{fmt_ass_time(dialogue['start'] + subtitle_offset)},{fmt_ass_time(end + subtitle_offset)},ChineseText,,0,0,0,,{{{common}\\1c{color}\\3c{to_bgr_ass(theme.title_outline)}\\bord{canvas.size(APPEARANCE['title_outline']):.2f}\\shad0}}{text}"
         )
     return events, len(accepted), max_width
 
@@ -670,11 +872,10 @@ def generate_translation_variants(
         placement=placement or TranslationPlacement(),
         subtitle_offset=subtitle_offset,
     )
-    glow = to_bgr_ass(theme.sung)
+    glow = to_bgr_ass(theme.title_fill or theme.sung)
     style_format = "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"
     styles = [
-        f"Style: ChineseGlow,{ZH_FONT_NAME},{canvas.size(CHINESE_FONT):.2f},&HFFFFFFFF&,&HFFFFFFFF&,{glow},&H00000000&,0,0,0,0,100,100,0,0,1,{canvas.size(APPEARANCE['chinese_glow']):.2f},0,1,0,0,0,1",
-        f"Style: ChineseText,{ZH_FONT_NAME},{canvas.size(CHINESE_FONT):.2f},&H00FFFFFF&,&H00FFFFFF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,{canvas.size(APPEARANCE['chinese_outline']):.2f},0,1,0,0,0,1",
+        f"Style: ChineseText,{ZH_FONT_NAME},{canvas.size(CHINESE_FONT):.2f},{glow},{glow},&H00FFFFFF&,&H00000000&,0,0,0,0,100,100,0,0,1,{canvas.size(APPEARANCE['title_outline']):.2f},0,7,0,0,0,1",
     ]
     karaoke = karaoke_ass.read_text(encoding="utf-8")
     marker = "\n[Events]\n"

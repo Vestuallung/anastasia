@@ -27,7 +27,7 @@ describe("单句时间轴", () => {
     const track = container.querySelector(".timeline-track") as HTMLDivElement;
     vi.spyOn(track, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 250, width: 1000, height: 250, toJSON: () => ({}) });
 
-    const handle = screen.getByLabelText(/边界 2，1200 毫秒/);
+    const handle = screen.getAllByLabelText(/边界 2，1200 毫秒/)[0];
     fireEvent.pointerDown(handle, { clientX: 450, pointerId: 1 });
     fireEvent.pointerMove(track, { clientX: 550, pointerId: 1 });
 

@@ -84,8 +84,11 @@ def test_encoder_and_font_defaults_are_portable() -> None:
     assert "libx264" in data["encode"]
 
 
-def test_setup_plan_contains_pinned_patch_and_model_script() -> None:
-    result = run_python([str(ROOT / "scripts/setup.py"), "--dry-run", "--with-model"])
+def test_setup_plan_contains_pinned_patch_and_model_script(tmp_path: Path) -> None:
+    result = run_python([
+        str(ROOT / "scripts/setup.py"), "--dry-run", "--with-model",
+        "--runtime-dir", str(tmp_path / "fresh-runtime"),
+    ])
     assert "5d10abefb5b63c902c162cdda0640274418ae8d7" in result.stdout
     assert "yohane-runtime.patch" in result.stdout
     assert "download_model.py" in result.stdout

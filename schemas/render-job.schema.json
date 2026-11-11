@@ -1,5 +1,59 @@
 {
   "$defs": {
+    "BlackoutRegion": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "default": 0,
+          "exclusiveMaximum": 1920,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0,
+          "exclusiveMaximum": 1080,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        },
+        "width": {
+          "default": 1920,
+          "exclusiveMinimum": 0,
+          "maximum": 1920,
+          "title": "Width",
+          "type": "number"
+        },
+        "height": {
+          "default": 1080,
+          "exclusiveMinimum": 0,
+          "maximum": 1080,
+          "title": "Height",
+          "type": "number"
+        },
+        "start": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start",
+          "type": "number"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        }
+      },
+      "title": "BlackoutRegion",
+      "type": "object"
+    },
     "FrameSettings": {
       "additionalProperties": false,
       "properties": {
@@ -167,7 +221,7 @@
               "type": "number"
             }
           ],
-          "default": 0,
+          "default": 0.0,
           "title": "Trim Start"
         },
         "trim_end": {
@@ -254,6 +308,33 @@
           "minimum": 0,
           "title": "Minimum Margin",
           "type": "number"
+        },
+        "blackout": {
+          "items": {
+            "$ref": "#/$defs/BlackoutRegion"
+          },
+          "title": "Blackout",
+          "type": "array"
+        },
+        "segment_seconds": {
+          "default": 30,
+          "minimum": 0,
+          "title": "Segment Seconds",
+          "type": "number"
+        },
+        "video_bitrate_mbps": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 0.1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Bitrate Mbps"
         }
       },
       "required": [
@@ -298,8 +379,9 @@
           "title": "Zh Only Ass"
         },
         "position": {
-          "default": "bottom_left",
+          "default": "top_left",
           "enum": [
+            "top_left",
             "bottom_left",
             "bottom_center",
             "bottom_right",
@@ -384,7 +466,7 @@
       "type": "object"
     },
     "reuse_outputs": {
-      "default": true,
+      "default": false,
       "title": "Reuse Outputs",
       "type": "boolean"
     },
@@ -402,6 +484,16 @@
       "default": 0.0,
       "title": "Subtitle Offset",
       "type": "number"
+    },
+    "countdown": {
+      "default": true,
+      "title": "Countdown",
+      "type": "boolean"
+    },
+    "katakana_ruby": {
+      "default": true,
+      "title": "Katakana Ruby",
+      "type": "boolean"
     },
     "translation": {
       "anyOf": [

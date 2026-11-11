@@ -330,6 +330,7 @@ def import_lyrics(path: Path) -> tuple[str, list[ImportedLine]]:
             lines.append(
                 ImportedLine(
                     text=_ass_visible_text(text),
+                    paragraph_before=1 if fields[4] == "paragraph-start" else 0,
                     ass_start_ms=ass_time_to_ms(fields[1]),
                     ass_end_ms=ass_time_to_ms(fields[2]),
                     ass_k_values_cs=tuple(int(item.group("k")) for item in ASS_K_RE.finditer(text)),

@@ -31,57 +31,61 @@ const project = {
   override_history: [],
 };
 
-describe("Karaoke Studio", () => {
+describe("Karaoke Studio structured editor", () => {
   beforeEach(() => {
-    sessionStorage.setItem("karaoke-session-token", "test");
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.startsWith("/api/project")) return new Response(JSON.stringify(project), { headers: { "content-type": "application/json" } });
-      if (url.startsWith("/api/appearance")) return new Response(JSON.stringify({ device: "cpu", model_url: "https://example.org/model", japanese_family: "Noto Sans CJK JP", chinese_family: "Noto Sans CJK JP" }), { headers: { "content-type": "application/json" } });
-      if (url.startsWith("/api/waveform")) return new Response(JSON.stringify({ peaks: [0.2, 0.8, 0.4], duration_ms: 5000 }), { headers: { "content-type": "application/json" } });
-      if (url.startsWith("/api/preview.ass")) return new Response("[Script Info]", { headers: { "content-type": "text/plain" } });
-      return new Response("{}", { headers: { "content-type": "application/json" } });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url=String(input);
+      if(url.startsWith("/api/waveform"))return new Response(JSON.stringify({peaks:[.2,.8,.4],duration_ms:5000,start_ms:0,end_ms:5000}),{headers:{"content-type":"application/json"}});
+      if(url.startsWith("/api/jobs/render"))return Response.json({job_id:"render-test"});
+      return new Response(JSON.stringify(project),{headers:{"content-type":"application/json"}});
     }));
   });
-
-  it("renders aligned project, inspector and timeline controls", async () => {
-    render(<App />);
-
-    expect(await screen.findByText("君は０から１になれ", { selector: ".project-title span" })).toBeVisible();
-    expect(screen.getByText("正在使用 Yohane 原始时间")).toBeVisible();
-    expect(screen.getByText("歌词内假名标注")).toBeVisible();
-    expect(screen.getByLabelText(/边界 1，1000 毫秒/)).toBeVisible();
-    expect(screen.getByRole("button", { name: /导出 ASS/i })).toBeEnabled();
-    expect(document.querySelector(".ruby-subtitle rt")).toHaveTextContent("きみはぜろからわんになれ");
-    expect(screen.getByRole("combobox", { name: "播放速度" })).toHaveValue("1");
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "播放速度" }), "1.5");
+  it("opens existing model data without requesting ASS playback",async()=>{
+    render(<App/>);
+    expect(await screen.findByText("君は０から１になれ",{selector:".project-title"})).toBeVisible();
+    expect(screen.getAllByLabelText(/边界 1，1000 毫秒/,{selector:"button"})[0]).toBeVisible();
+    expect(screen.getByRole("button",{name:"导出成片"})).toBeEnabled();
+    expect(screen.getByLabelText("结构化字幕画布")).toBeVisible();
+    expect(screen.queryByText("正在使用 Yohane 原始时间")).not.toBeInTheDocument();
+    expect(vi.mocked(fetch).mock.calls.some(([url])=>String(url).includes("preview.ass"))).toBe(false);
+    await userEvent.selectOptions(screen.getByLabelText("播放速度"),"1.5");
     expect(document.querySelector("audio")?.playbackRate).toBe(1.5);
   });
-
-  it("opens the structural report", async () => {
-    render(<App />);
-    await screen.findByText("正在使用 Yohane 原始时间");
-    await userEvent.click(screen.getByRole("button", { name: /0 个问题/i }));
-
-    await waitFor(() => expect(screen.getByText(/歌词结构检查完成/)).toBeVisible());
+  it("keeps help out of the editing surface",async()=>{
+    render(<App/>);await screen.findByRole("button",{name:"帮助"});
+    expect(screen.queryByText(/拖动色块移动字音/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button",{name:"帮助"}));
+    expect(screen.getByRole("dialog",{name:"帮助"})).toBeVisible();
   });
-
-  it("shows the configured model details before acceptance", async () => {
-    const unaccepted = { ...project, model: { ...project.model, license_accepted_at: null } };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.startsWith("/api/project")) return new Response(JSON.stringify(unaccepted), { headers: { "content-type": "application/json" } });
-      if (url.startsWith("/api/appearance")) return new Response(JSON.stringify({ device: "cpu", model_url: "https://example.org/model", japanese_family: "Noto Sans CJK JP", chinese_family: "Noto Sans CJK JP" }), { headers: { "content-type": "application/json" } });
-      if (url.startsWith("/api/waveform")) return new Response(JSON.stringify({ peaks: [], duration_ms: 5000 }), { headers: { "content-type": "application/json" } });
-      if (url.startsWith("/api/preview.ass")) return new Response("[Script Info]", { headers: { "content-type": "text/plain" } });
-      return new Response("{}", { headers: { "content-type": "application/json" } });
-    }));
-    render(<App />);
-
-    await userEvent.click(await screen.findByRole("button", { name: /查看并接受模型许可/i }));
-    expect(screen.getByRole("dialog", { name: /强制对齐模型的许可/i })).toBeVisible();
-    expect(screen.getByText("CC-BY-NC-SA-4.0")).toBeVisible();
-    expect(screen.getByText("NextFire/model")).toBeVisible();
-    expect(screen.getByRole("link", { name: /模型说明与许可页面/i })).toHaveAttribute("href", "https://example.org/model");
+  it("allows selecting rendering settings",async()=>{
+    render(<App/>);await screen.findByText("字幕样式");
+    await userEvent.click(screen.getByRole("button",{name:"字幕样式"}));
+    expect(screen.getByLabelText("右上标题")).toBeVisible();
+    expect(screen.getByLabelText("遮黑比例")).toBeVisible();
+  });
+  it("requests an upload copy when the editor option is selected",async()=>{
+    vi.stubGlobal("EventSource", class {close() {}});
+    render(<App/>);
+    const option=await screen.findByLabelText("同时生成上传版（500 MB 以内）");
+    expect(option).not.toBeChecked();
+    await userEvent.click(option);
+    await userEvent.click(screen.getByRole("button",{name:"导出成片"}));
+    await waitFor(()=>expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/jobs/render?fresh=true&upload=true"),
+      expect.objectContaining({method:"POST"}),
+    ));
+  });
+  it("passes the selected Mbps value to the main render request",async()=>{
+    vi.stubGlobal("EventSource", class {close() {}});
+    render(<App/>);
+    const bitrate=await screen.findByLabelText("视频码率");
+    await userEvent.selectOptions(bitrate,"custom");
+    expect(screen.getByRole("button",{name:"导出成片"})).toBeDisabled();
+    await userEvent.type(screen.getByLabelText("自定义码率（Mbps）"),"10.5");
+    await userEvent.click(screen.getByRole("button",{name:"导出成片"}));
+    await waitFor(()=>expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/jobs/render?fresh=true&video_bitrate_mbps=10.5"),
+      expect.objectContaining({method:"POST"}),
+    ));
   });
 });

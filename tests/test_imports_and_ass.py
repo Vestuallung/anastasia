@@ -195,3 +195,30 @@ def test_single_unicode_symbol_ruby_does_not_leak_annotation_markers() -> None:
     assert line.ruby_groups[0].display == "π"
     assert line.ruby_groups[0].reading == "パイ"
     assert [token.text for token in line.display_tokens] == ["π", "で", "なんか", "じゃ"]
+
+
+def test_audio_preparation_keeps_imported_ass_timing(tmp_path, monkeypatch):
+    from karaoke_studio.models import AudioRecord
+    from karaoke_studio.service import prepare_project
+
+    project = tmp_path / "project"
+    create_project(project, "Preserved timing")
+    source = tmp_path / "source.ass"
+    source.write_text(
+        "[Script Info]\nPlayResX: 1920\nPlayResY: 1080\n[Events]\n"
+        "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
+        "Dialogue: 0,0:00:00.20,0:00:01.40,K1,,0,0,0,karaoke,{\\k60}あ{\\k60}い\n",
+        encoding="utf-8",
+    )
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    imported = import_project_assets(
+        project, lyrics_path=source, audio_path=audio, preserve_ass_timing=True
+    )
+    monkeypatch.setattr(
+        "karaoke_studio.service.prepare_audio",
+        lambda *_: AudioRecord(prepared_sha256="a" * 64, duration_ms=2000),
+    )
+    prepared = prepare_project(project)
+    assert prepared.alignment_stale is False
+    assert prepared.raw_alignment == imported.raw_alignment

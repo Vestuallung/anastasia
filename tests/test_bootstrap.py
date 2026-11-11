@@ -124,6 +124,7 @@ def test_macos_uses_libass_build_outside_path(monkeypatch, tmp_path: Path) -> No
     spec = importlib.util.spec_from_file_location("bootstrap_macos", ROOT / "scripts/bootstrap.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    monkeypatch.setattr(module.os, "environ", os.environ.copy())
     monkeypatch.setattr(module, "platform_name", lambda: "macos")
     monkeypatch.setattr(module.shutil, "which", lambda name: "/tools/" + name)
     calls = []
@@ -146,3 +147,29 @@ def test_macos_uses_libass_build_outside_path(monkeypatch, tmp_path: Path) -> No
     assert any("ffmpeg-full" in command for command in calls)
     assert saved["KARAOKE_FFMPEG"] == str(tmp_path / "ffmpeg-full/bin/ffmpeg")
     assert saved["KARAOKE_FFPROBE"] == str(tmp_path / "ffmpeg-full/bin/ffprobe")
+
+
+def test_windows_replaces_ffmpeg_and_ffprobe_as_a_pair(monkeypatch, tmp_path: Path) -> None:
+    import karaoke_studio.config as config
+
+    spec = importlib.util.spec_from_file_location("bootstrap_windows", ROOT / "scripts/bootstrap.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module.os, "environ", os.environ.copy())
+    portable = tmp_path / "ffmpeg.exe"
+    probe = tmp_path / "ffprobe.exe"
+    probe.touch()
+    monkeypatch.setattr(config, "tool_path", lambda name: name)
+    monkeypatch.setattr(module, "platform_name", lambda: "windows")
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/old/" + name)
+    monkeypatch.setattr(module, "supports_ass", lambda executable: executable == str(portable))
+    monkeypatch.setattr(module, "portable_tool", lambda *args: portable)
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: None)
+    saved = {}
+    monkeypatch.setattr(module, "save_environment", saved.update)
+    monkeypatch.setattr(
+        module.sys, "argv", ["bootstrap", "--main-only", "--data-dir", str(tmp_path / "data")]
+    )
+    module.main()
+    assert saved["KARAOKE_FFMPEG"] == str(portable)
+    assert saved["KARAOKE_FFPROBE"] == str(probe)
